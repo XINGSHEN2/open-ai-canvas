@@ -1,3 +1,4 @@
+import "./lib/crypto-compat";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
 import { installChunkRecovery } from "@/lib/chunk-recovery";
