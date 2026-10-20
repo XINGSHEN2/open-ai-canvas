@@ -255,7 +255,7 @@
             "defaultResolution": "480P",
             "generateAudio": {
               "supported": false,
-              "default": true
+            "default": false
             },
             "watermark": {
               "supported": false,

@@ -20,6 +20,7 @@ import (
 )
 
 func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
+	registerLocalGuestRoutes(r, svc)
 	registerChannelOrderRoutes(r, svc)
 	registerNotificationRoutes(r, svc)
 	registerAuthProfileRoutes(r, svc)
@@ -168,13 +169,16 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.GET("/auth/session", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
-			ok(c, gin.H{"user": nil})
+			ok(c, gin.H{"user": nil, "localGuestEnabled": localGuestAccessAllowed(c)})
 			return
 		}
 		publicUser, err := svc.PublicAuthUser(user)
 		if err != nil {
 			failService(c, err)
 			return
+		}
+		if svc.IsLocalGuest(user) {
+			publicUser.IdentityProvider = "local_guest"
 		}
 		limits, err := svc.PublicRuntimeLimits()
 		if err != nil {
@@ -190,6 +194,9 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		if err != nil {
 			failService(c, err)
 			return
+		}
+		if svc.IsLocalGuest(user) {
+			features = localGuestFeatures(features)
 		}
 		ok(c, gin.H{"user": publicUser, "runtimeLimits": limits, "drawingEngine": drawingEngine, "features": features})
 	})

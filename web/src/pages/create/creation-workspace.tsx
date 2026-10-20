@@ -148,7 +148,9 @@ export function CreationComposer(props: ComposerProps) {
     const [trackState, setTrackState] = useState({ canScrollLeft: false, canScrollRight: false, isExpanded: true, isDragging: false });
     const previousAttachmentCountRef = useRef(0);
     const interactionBusy = props.busy || props.referenceReplacementBusy;
-    const canSubmit = Boolean(props.prompt.trim()) && !interactionBusy;
+    const referenceOnlyVideo = props.mode === "video" && props.videoProfile.operations.length === 1 && props.videoProfile.operations[0] === "reference_to_video";
+    const hasReferenceMedia = props.attachments.some((item) => creationAttachmentKind(item) !== "file") || props.references.some((item) => item.active && ["image", "video", "audio"].includes(item.kind));
+    const canSubmit = Boolean(props.prompt.trim()) && !interactionBusy && (!referenceOnlyVideo || hasReferenceMedia);
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const priceChannel = resolveModelChannel(props.config, props.model);
     const quoteRequest = useMemo(() => modelQuoteRequest(props.config, props.model, props.mode, props.modelRequirements), [props.config, props.mode, props.model, props.modelRequirements]);
@@ -445,6 +447,7 @@ export function CreationComposer(props: ComposerProps) {
 }
 
 export function CreationModeTabs({ mode, onModeChange, agentActive = false, onAgentSelect, orientation = "horizontal" }: { mode: CreationMode; onModeChange: (mode: CreationMode) => void; agentActive?: boolean; onAgentSelect?: () => void; orientation?: "horizontal" | "vertical" }) {
+    const localGuest = useUserStore((state) => state.user?.identityProvider === "local_guest");
     const reducedMotion = useReducedMotion();
     const items: { mode: CreationMode; icon: ReactNode; label: string }[] = [
         { mode: "video", icon: <Film />, label: "视频" },
@@ -462,13 +465,13 @@ export function CreationModeTabs({ mode, onModeChange, agentActive = false, onAg
     return <LayoutGroup id={`creation-mode-tabs-${orientation}`}>
         <div className="creation-mode-tabs" role="group" aria-label="创作模式" data-active-mode={agentActive ? "agent" : mode} data-orientation={orientation} style={{ gridTemplateColumns: orientation === "vertical" ? "minmax(0, 1fr)" : `repeat(${onAgentSelect ? 4 : 3}, minmax(0, 1fr))` }}>
         {items.map((item) => (
-            <button key={item.mode} type="button" className="creation-mode-button" data-mode={item.mode} aria-pressed={!agentActive && item.mode === mode} aria-label={`${item.label}生成`} onClick={() => onModeChange(item.mode)}>
+            <button key={item.mode} type="button" className="creation-mode-button" data-mode={item.mode} disabled={localGuest && item.mode === "text"} title={localGuest && item.mode === "text" ? "访客模式仅开放本地图片和视频模型" : undefined} aria-pressed={!agentActive && item.mode === mode} aria-label={`${item.label}生成`} onClick={() => onModeChange(item.mode)}>
                 {indicator(!agentActive && item.mode === mode)}
                 {item.icon}
                 <span>{item.label}</span>
             </button>
         ))}
-        {onAgentSelect ? <button type="button" className="creation-mode-button" data-mode="agent" aria-pressed={agentActive} onClick={onAgentSelect}>{indicator(agentActive)}<Brain /><span>Agent</span><i className="creation-mode-spark" aria-hidden /></button> : null}
+        {onAgentSelect ? <button type="button" className="creation-mode-button" data-mode="agent" disabled={localGuest} title={localGuest ? "Agent 需要正式账号" : undefined} aria-pressed={agentActive} onClick={onAgentSelect}>{indicator(agentActive)}<Brain /><span>Agent</span><i className="creation-mode-spark" aria-hidden /></button> : null}
         </div>
     </LayoutGroup>;
 }

@@ -41,6 +41,7 @@ export type AdminUser = LocalUser & {
 };
 
 export type AuthSessionPayload = {
+    localGuestEnabled?: boolean;
     user: LocalUser | null;
     runtimeLimits?: RuntimeLimits;
     drawingEngine?: CanvasDrawingEngineSetting;
@@ -420,7 +421,11 @@ export function getAuthSession() {
     if (authSessionRequest) return authSessionRequest;
     authSessionRequest = http
         .get<AuthSessionPayload>("/auth/session")
-        .then((payload) => {
+        .then(async (payload) => {
+            if (!payload.user && payload.localGuestEnabled) {
+                await http.post("/auth/guest", {});
+                payload = await http.get<AuthSessionPayload>("/auth/session");
+            }
             authSessionCache = { payload, expiresAt: Date.now() + 5_000 };
             return payload;
         })

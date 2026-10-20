@@ -20,7 +20,8 @@ func RegisterFeatureAvailabilityRoutes(r *gin.RouterGroup, svc *service.Service)
 	})
 
 	r.GET("/features", func(c *gin.Context) {
-		if _, err := currentUser(c, svc); err != nil {
+		user, err := currentUser(c, svc)
+		if err != nil {
 			failService(c, err)
 			return
 		}
@@ -28,6 +29,9 @@ func RegisterFeatureAvailabilityRoutes(r *gin.RouterGroup, svc *service.Service)
 		if err != nil {
 			failService(c, err)
 			return
+		}
+		if svc.IsLocalGuest(user) {
+			setting = localGuestFeatures(setting)
 		}
 		ok(c, gin.H{"features": setting})
 	})

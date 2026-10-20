@@ -24,7 +24,10 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 			return nil, err
 		}
 	}
-	if _, ok := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType); ok {
+	// Local Qwen implements the standard Images wire contract, including multipart
+	// edits. The generic plugin instead sends JSON references and a resolution tier.
+	localQwenImages := input.Config.InterfaceType == string(model.ChannelInterfaceOpenAIImage) && input.Config.Model == "qwen-image-2.1"
+	if _, ok := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType); ok && !localQwenImages {
 		return runDeclarativeProtocolTask(ctx, input)
 	}
 	if input.Config.InterfaceType == string(model.ChannelInterfaceGrokImage) {

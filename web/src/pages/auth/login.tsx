@@ -27,7 +27,7 @@ export default function LoginPage() {
 
     // 如果已登录，直接跳转
     useEffect(() => {
-        if (hydrated && user) {
+        if (hydrated && user && user.identityProvider !== "local_guest") {
             navigate(next, { replace: true });
         }
     }, [hydrated, user, next, navigate]);

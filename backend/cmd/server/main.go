@@ -110,6 +110,9 @@ func run(ctx context.Context) error {
 		slog.Info("storage migration completed", "tasks", summary.Tasks, "assets", summary.Assets, "projects", summary.Projects, "backup", summary.Backup)
 	}
 	r := gin.New()
+	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
+		return err
+	}
 	// 访问日志：成功的查询类请求只在 debug 级别输出，避免轮询和列表查询把日志打爆。
 	r.Use(logging.AccessLog(redactCanvasSharePath), logging.Recovery())
 	r.Use(handler.RequestCorrelationMiddleware())
@@ -120,6 +123,7 @@ func run(ctx context.Context) error {
 	r.Use(corsMiddleware)
 	handler.ConfigureRuntime(svc)
 	api := r.Group("/api")
+	api.Use(handler.LocalGuestBoundary(svc))
 	status := newSystemStatus(db, svc)
 	registerSystemStatusRoutes(api, status)
 	handler.RegisterOAuthCallbackRoutes(r, svc)

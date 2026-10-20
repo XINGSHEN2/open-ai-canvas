@@ -23,6 +23,9 @@ export function WorkspaceAccountMenu() {
         return <span className="size-9 animate-pulse rounded-[var(--r-md)] bg-foreground/[.06]" aria-hidden />;
     }
 
+    if (user?.identityProvider === "local_guest") {
+        return <Link to="/login" className="inline-flex items-center gap-1.5 px-1.5 text-xs text-foreground/55" aria-label="管理员登录" title="当前为内网访客，管理后台仍需登录"><CircleUserRound className="size-5" /><span>内网访客 · 管理员登录</span></Link>;
+    }
     return user ? (
         <><Popover
             trigger="click"

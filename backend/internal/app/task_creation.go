@@ -89,6 +89,9 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 		}
 	}
 
+	if err := s.validateLocalGuestTask(userID, normalizedInput); err != nil {
+		return nil, err
+	}
 	if strings.HasPrefix(taskType, "video_") && !hasExecutableProviderVideoConfig(normalizedInput) {
 		if mode, _ := normalizedInput["mode"].(string); mode != "video" {
 			return nil, errors.New("视频任务必须使用 video 模式")

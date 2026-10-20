@@ -386,9 +386,12 @@ func validateVideoTask(profile *VideoCapabilityConfig, input canvasGenerationInp
 	if len(profile.Resolutions) > 0 && !isAutomaticVideoResolution(input.Config.VQuality) && videoResolutionNameRequest(profile, input.Config.VQuality) == "" {
 		return newModelCapabilityArgumentError("quality", "unsupported_value", BadAuthRequest("输出分辨率不在当前模型支持范围内"))
 	}
+	if len(profile.Operations) == 1 && profile.Operations[0] == "reference_to_video" && len(input.ReferenceImages)+len(input.ReferenceVideos)+len(input.ReferenceAudios) == 0 {
+		return newModelCapabilityArgumentError("referenceNodeIds", "item_count", BadAuthRequest("当前参考生成模型至少需要一份参考图片、视频或音频"))
+	}
 	operation := metadataString(input.Metadata, "videoEditOperation")
 	if operation == "" {
-		if len(input.ReferenceImages) > 0 {
+		if len(input.ReferenceImages) > 0 && containsCapabilityString(profile.Operations, "image_to_video") {
 			operation = "image_to_video"
 		} else {
 			operation = profile.DefaultOperation
