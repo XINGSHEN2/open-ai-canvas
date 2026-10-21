@@ -28,6 +28,53 @@ tags:
   - name: skills
   - name: workbench
 paths:
+  /context-ir/jobs:
+    post:
+      summary: 创建视频提示词 IR 优化任务（不生成视频）
+      description: 需登录。素材必须属于当前用户；最多同时两个任务，满额返回 429。部署需配置 CANVAS_CONTEXT_IR_BASE_URL。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt, assets, seconds, ratio, resolution]
+              properties:
+                prompt: {type: string}
+                seconds: {type: integer, minimum: 5, maximum: 15}
+                ratio: {type: string, enum: ['16:9', '9:16']}
+                resolution: {type: string, enum: ['480', '768']}
+                assets:
+                  type: array
+                  maxItems: 15
+                  items:
+                    type: object
+                    required: [resourceId, kind, label]
+                    properties:
+                      resourceId: {type: string}
+                      kind: {type: string, enum: [image, video, audio]}
+                      label: {type: string}
+      responses:
+        '200':
+          description: 统一业务信封，data 包含 id、status、createdAt；status 为 running。
+        '400': {description: 请求参数或素材无效}
+        '401': {description: 未登录}
+        '404': {description: 素材不存在或不可访问}
+        '429': {description: 请求频率或并发超限}
+        '503': {description: IR 尚未配置}
+  /context-ir/jobs/{id}:
+    get:
+      summary: 查询当前用户的 IR 提示词任务
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: 统一业务信封，data 包含 id、status、prompt、error、createdAt、finishedAt。status 为 running/completed/failed。
+        '401': {description: 未登录}
+        '404': {description: 任务不存在或不可访问}
   /projects/{id}/assets/{assetId}/image:
     put:
       tags: [projects, assets]

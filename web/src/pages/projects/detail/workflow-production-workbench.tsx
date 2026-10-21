@@ -90,6 +90,7 @@ export default function WorkflowProductionWorkbench(props: Props) {
     const [form] = Form.useForm<ShotEditorValues>();
     const watchedDuration = Form.useWatch("durationSeconds", form);
     const watchedTitle = Form.useWatch("title", form);
+    const watchedVideoPrompt = Form.useWatch("videoPrompt", form) || "";
     const [leftTab, setLeftTab] = useState<"assets" | "episodes" | "shots">("episodes");
     const [previewTab, setPreviewTab] = useState<"latest" | "history">("latest");
     const [previewArtifactId, setPreviewArtifactId] = useState("");
@@ -480,6 +481,17 @@ export default function WorkflowProductionWorkbench(props: Props) {
                             <div className="workflow-form-section-heading"><span>镜头脚本</span><small>先写清镜头里发生什么，再调整生成参数</small></div>
                             <Form.Item name="title" label="镜头名称" rules={[{ required: true, message: "请输入镜头名称" }]}><Input placeholder="用一句话概括这个镜头" /></Form.Item>
                             <Form.Item name="videoPrompt" label="视频提示词" rules={[{ required: true, message: "请输入视频提示词" }]}><ShotAssetMentionTextarea references={shotAssetReferenceContext.mentionReferences} /></Form.Item>
+                            {generationCapability === "video" && /minimax.*h3/i.test(selectedModel) ? <IRPromptButton
+                                key={selectedShot.id}
+                                prompt={watchedVideoPrompt}
+                                fingerprint={JSON.stringify([selectedShot.id, watchedVideoPrompt, selectedModel, generationSeconds, aspectRatio, resolution, shotAssetReferenceContext])}
+                                disabled={saveShot.isPending}
+                                prepare={async () => ({ ...prepareIRReferences(watchedVideoPrompt, [
+                                    ...shotAssetReferenceContext.mentionReferences.map((reference) => ({ ...reference, kind: "image" as const })),
+                                    ...generationReferenceAudios.map((audio, index) => ({ id: audio.id, nodeId: "", kind: "audio" as const, label: `音频${index + 1}`, title: audio.name, active: true, storageKey: audio.storageKey })),
+                                ]), seconds: Number(generationSeconds), ratio: aspectRatio, resolution: resolution.replace(/p$/i, "") })}
+                                onApply={(value) => { form.setFieldValue("videoPrompt", value); setEditorDirty(true); }}
+                            /> : null}
                             <BoundAssets detail={detail} shotId={selectedShot.id} changing={changeAssetBinding.isPending} onUnlink={(reference) => changeAssetBinding.mutate({ reference })} />
                             {generationCapability !== "video" ? <div className="workflow-form-grid">
                                 <Form.Item name="action" label="表演与动作"><Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="按动作节拍描述人物表演、走位和物体运动" /></Form.Item>
@@ -768,3 +780,5 @@ function assetPreviewUrl(asset: ProjectAsset) {
     const resourceId = resourceIdFromStorageKey(asset.storageKey);
     return resourceId && asset.mediaType === "image" ? resourceFileUrl(resourceId) : "";
 }
+import { IRPromptButton } from "@/components/ir-prompt-button";
+import { prepareIRReferences } from "@/lib/ir-references";

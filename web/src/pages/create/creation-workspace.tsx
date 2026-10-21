@@ -1,4 +1,6 @@
 import { ImageSizePicker } from "@/components/image-size-picker";
+import { IRPromptButton } from "@/components/ir-prompt-button";
+import { prepareIRReferences } from "@/lib/ir-references";
 import { ImageParameterFields } from "@/components/image-parameter-fields";
 import { imageResolutionUsesQuality, imageSizePresets } from "@/lib/image-size-presets";
 import { createPortal } from "react-dom";
@@ -404,6 +406,13 @@ export function CreationComposer(props: ComposerProps) {
                 </> : null}
                 {props.prompt.trim() || props.attachments.length || props.references.some((reference) => reference.active) ? <Tooltip title="清空提示词和参考内容"><button type="button" className="creation-chat-control is-clear" onClick={props.onClearComposer} disabled={interactionBusy} aria-label="清空提示词和参考内容"><Trash2 /><span>清空</span></button></Tooltip> : null}
             </div>
+            {props.mode === "video" && /minimax.*h3/i.test(props.model) ? <IRPromptButton
+                prompt={props.prompt}
+                fingerprint={JSON.stringify([props.prompt, props.model, props.seconds, props.ratio, props.videoQuality, props.references])}
+                disabled={interactionBusy}
+                prepare={async () => ({ ...prepareIRReferences(props.prompt, props.references), seconds: Number(props.seconds), ratio: props.ratio, resolution: props.videoQuality.replace(/p$/i, "") })}
+                onApply={props.setPrompt}
+            /> : null}
             <Button
                 type="text"
                 className={`creation-submit ${showCost ? "has-cost" : ""}`}

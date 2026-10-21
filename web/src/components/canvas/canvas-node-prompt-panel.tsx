@@ -28,6 +28,8 @@ import { CanvasChooseEffectPicker } from "./canvas-choose-effect-picker";
 import { CanvasChooseMotionPicker } from "./canvas-choose-motion-picker";
 import { CanvasPortraitTexturePopover } from "./canvas-portrait-texture-popover";
 import { CanvasPromptOptimizerDrawer } from "./canvas-prompt-optimizer-drawer";
+import { IRPromptButton } from "@/components/ir-prompt-button";
+import { prepareIRReferences } from "@/lib/ir-references";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata, type CanvasWorkspaceMode } from "@/types/canvas";
 import { applyToolMention, removeToolMentions, autoMentionCanvasResourceReferences, buildToolMentionReference, canvasResourceMentionToken, normalizeCanvasNodeMentionTokens, overwriteSameTypeToolMention, parseToolMentionTokens, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
@@ -603,6 +605,14 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
             {renderComposerHeader(false)}
 
             {renderPromptEditor(false)}
+            {mode === "video" && /minimax.*h3/i.test(config.model) ? <IRPromptButton
+                key={node.id}
+                prompt={prompt}
+                fingerprint={JSON.stringify([node.id, prompt, config.model, config.videoSeconds, config.size, config.vquality, activeReferences])}
+                disabled={isRunning}
+                prepare={async () => ({ ...prepareIRReferences(prompt, activeReferences), seconds: Number(config.videoSeconds), ratio: config.size, resolution: config.vquality.replace(/p$/i, "") })}
+                onApply={updatePrompt}
+            /> : null}
 
             {/* B区 参数区（对应 #98 决策2：默认折叠，手风琴展开）*/}
             {hasVideoPromptTools ? (
