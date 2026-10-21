@@ -221,6 +221,9 @@ type CanvasGenerationPersistenceAttempt = {
 };
 const pendingCanvasGenerationAttempts = new Map<string, Map<string, CanvasGenerationPersistenceAttempt>>();
 
+// HTTP intranet deployments use IndexedDB transaction locks.
+import { withBrowserStorageLock } from "@/lib/browser-storage-lock";
+
 type AsyncCanvasStorageLock = {
     request<T>(name: string, callback: () => Promise<T>): Promise<T>;
 };
@@ -237,7 +240,7 @@ function runWithBrowserCanvasStorageLock<T>(scope: string, operation: () => Prom
     const lockName = `${CANVAS_STORAGE_LOCK_PREFIX}${scope}`;
     if (locks) return locks.request(lockName, operation);
     if (options.requireCrossRealmLock && typeof window !== "undefined" && typeof document !== "undefined") {
-        throw new Error("当前浏览器不支持跨标签存储锁，已停止画布生成持久化");
+        return withBrowserStorageLock(lockName, operation);
     }
     return operation();
 }

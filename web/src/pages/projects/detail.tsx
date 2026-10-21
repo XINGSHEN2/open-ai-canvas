@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, App } from "antd";
 import { ArrowLeft, Plus } from "lucide-react";
@@ -57,7 +57,7 @@ export default function ProjectDetailPage() {
     });
     const project = coreQuery.data?.project;
     const workspace = workspaceQuery.data;
-    const detail: ProjectDetail | undefined = project ? {
+    const detail = useMemo<ProjectDetail | undefined>(() => project ? {
         project,
         units: workspace?.unit ? units.map((unit) => unit.id === workspace.unit.id ? workspace.unit : unit) : units,
         canvases: [],
@@ -72,7 +72,7 @@ export default function ProjectDetailPage() {
         shotReferences: workspace?.shotReferences || [],
         assetCandidates: workspace?.assetCandidates || [],
         tasks: workspace?.tasks || [],
-    } : undefined;
+    } : undefined, [project, units, workspace, unitsQuery.data?.canvasCounts]);
     const refreshProject = () => { void queryClient.invalidateQueries({ queryKey: ["project", projectId] }); void queryClient.invalidateQueries({ queryKey: ["projects"] }); };
     const createCanvas = async () => {
         if (detail?.project.status === "archived") { message.warning("项目已归档，请先在项目设置中恢复"); return; }

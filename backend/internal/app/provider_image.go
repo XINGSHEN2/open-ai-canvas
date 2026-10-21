@@ -58,7 +58,10 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 		writeField(writer, "model", input.Config.Model)
 		writeField(writer, "prompt", withSystemPrompt(input.Config, input.Prompt))
 		writeField(writer, "n", "1")
-		if responseFormat := configuredImageResponseFormat(input.ImageCapability); responseFormat != "" {
+		if localQwenImages {
+			// Persist through the website resource store; clients need not reach the GPU host.
+			writeField(writer, "response_format", "b64_json")
+		} else if responseFormat := configuredImageResponseFormat(input.ImageCapability); responseFormat != "" {
 			writeField(writer, "response_format", responseFormat)
 		}
 		if imageParameterSupported(input.ImageCapability, "output_format") {
@@ -95,7 +98,9 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 			"prompt": withSystemPrompt(input.Config, input.Prompt),
 			"n":      1,
 		}
-		if responseFormat := configuredImageResponseFormat(input.ImageCapability); responseFormat != "" {
+		if localQwenImages {
+			body["response_format"] = "b64_json"
+		} else if responseFormat := configuredImageResponseFormat(input.ImageCapability); responseFormat != "" {
 			body["response_format"] = responseFormat
 		}
 		if imageParameterSupported(input.ImageCapability, "output_format") {

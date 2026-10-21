@@ -1,3 +1,4 @@
+import { sha256Digest } from "@/lib/sha256";
 import { type GenerationTask } from "@/services/api/task-center";
 import { backendProviderConfig, logicalModelIDForConfig, runBackendGenerationTask, type GenerationTaskDependencies } from "@/services/api/generation-task";
 import { configuredModelMatchesCapability, defaultConfig, normalizeModelOptionValue, normalizeRunningHubCapability, resolveModelRequestConfig, type AiConfig, type WorkflowFieldMapping } from "@/stores/use-config-store";
@@ -140,7 +141,7 @@ export type GenerationRetryContext = {
 
 export async function createGenerationRetryContext(retryOf: string, attemptGroupId = retryOf): Promise<GenerationRetryContext> {
     const bytes = new TextEncoder().encode(`generation-retry\0${attemptGroupId}\0${retryOf}`);
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    const digest = new Uint8Array(await sha256Digest(bytes));
     const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
     return { retryOf, attemptGroupId, clientOperationId: `retry:${hex}` };
 }

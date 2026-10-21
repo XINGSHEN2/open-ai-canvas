@@ -465,7 +465,7 @@ export function CreationModeTabs({ mode, onModeChange, agentActive = false, onAg
     return <LayoutGroup id={`creation-mode-tabs-${orientation}`}>
         <div className="creation-mode-tabs" role="group" aria-label="创作模式" data-active-mode={agentActive ? "agent" : mode} data-orientation={orientation} style={{ gridTemplateColumns: orientation === "vertical" ? "minmax(0, 1fr)" : `repeat(${onAgentSelect ? 4 : 3}, minmax(0, 1fr))` }}>
         {items.map((item) => (
-            <button key={item.mode} type="button" className="creation-mode-button" data-mode={item.mode} disabled={localGuest && item.mode === "text"} title={localGuest && item.mode === "text" ? "访客模式仅开放本地图片和视频模型" : undefined} aria-pressed={!agentActive && item.mode === mode} aria-label={`${item.label}生成`} onClick={() => onModeChange(item.mode)}>
+            <button key={item.mode} type="button" className="creation-mode-button" data-mode={item.mode} aria-pressed={!agentActive && item.mode === mode} aria-label={`${item.label}生成`} onClick={() => onModeChange(item.mode)}>
                 {indicator(!agentActive && item.mode === mode)}
                 {item.icon}
                 <span>{item.label}</span>

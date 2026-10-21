@@ -26,6 +26,9 @@ func TestLocalQwenUsesStandardImagesWireContract(t *testing.T) {
 			if body["size"] != "1024x1024" || body["model"] != "qwen-image-2.1" {
 				t.Errorf("bad generation body %v", body)
 			}
+			if body["response_format"] != "b64_json" {
+				t.Error("Qwen results must be persisted by the website, not downloaded by the browser")
+			}
 		} else {
 			if r.URL.Path != "/v1/images/edits" {
 				t.Error(r.URL.Path)
@@ -35,6 +38,9 @@ func TestLocalQwenUsesStandardImagesWireContract(t *testing.T) {
 			}
 			if r.FormValue("prompt") != "cube" || len(r.MultipartForm.File["image"]) != 1 {
 				t.Error("missing multipart image")
+			}
+			if r.FormValue("response_format") != "b64_json" {
+				t.Error("Qwen edits must return inline image data")
 			}
 			if r.MultipartForm != nil {
 				defer r.MultipartForm.RemoveAll()

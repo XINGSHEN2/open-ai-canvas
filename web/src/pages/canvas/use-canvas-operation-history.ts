@@ -1,3 +1,4 @@
+import { sha256Digest } from "@/lib/sha256";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
@@ -204,7 +205,7 @@ export async function consumeCanvasGenerationContinuation(
 
 async function canvasGenerationContinuationId(nodeId: string, context?: CanvasGenerationContext) {
     const seed = new TextEncoder().encode(`canvas-operation-generation\0${context?.source || ""}\0${context?.conversationId || ""}\0${context?.messageId || ""}\0${nodeId}`);
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", seed));
+    const digest = new Uint8Array(await sha256Digest(seed));
     return `agent:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 

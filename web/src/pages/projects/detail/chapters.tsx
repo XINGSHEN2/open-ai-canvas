@@ -74,6 +74,7 @@ import { listGenerationTasks, queryGenerationTask, type GenerationTask } from "@
 import { formatCount, formatTime, statusLabel, type ProjectDetailViewProps } from "./shared";
 import { chapterStoryboardAssets, chapterStoryboardCharacters, chapterStoryboardReplaceImpact, storyboardRowsToProjectShots } from "./chapter-storyboard-production";
 import { chapterAssetsFromGenerationTask, chapterStoryboardFromGenerationTask, chapterTaskIdentity, extractChapterAssets, generateChapterStoryboard } from "./project-chapter-ai";
+import { updateChapterListCache } from "./chapter-list-cache";
 
 const CHAPTER_ROW_HEIGHT = 62;
 const MAX_NOVEL_IMPORT_CHAPTERS = 2500;
@@ -90,8 +91,8 @@ export default function ProjectChaptersView({ detail, refreshProject }: ProjectD
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { chapterId = "" } = useParams();
-    const initialSelectedId = detail.units.some((unit) => unit.id === chapterId) ? chapterId : detail.units[0]?.id || "";
-    const [selectedId, setSelectedId] = useState(initialSelectedId);
+    // The route is the single selection source; local state must not race navigation.
+    const selectedId = detail.units.some((unit) => unit.id === chapterId) ? chapterId : detail.units[0]?.id || "";
     const [createOpen, setCreateOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -179,14 +180,9 @@ export default function ProjectChaptersView({ detail, refreshProject }: ProjectD
     });
 
     useEffect(() => {
-        setOrderedIds(detail.units.slice().sort((left, right) => left.position - right.position).map((unit) => unit.id));
-        if (!detail.units.some((unit) => unit.id === selectedId)) setSelectedId(detail.units[0]?.id || "");
-    }, [detail.units, selectedId]);
-
-    useEffect(() => {
-        if (!chapterId || chapterId === selectedId || dirty || !detail.units.some((unit) => unit.id === chapterId)) return;
-        setSelectedId(chapterId);
-    }, [chapterId, detail.units, dirty, selectedId]);
+        const next = detail.units.slice().sort((left, right) => left.position - right.position).map((unit) => unit.id);
+        setOrderedIds((current) => current.length === next.length && current.every((id, index) => id === next[index]) ? current : next);
+    }, [detail.units]);
 
     useEffect(() => {
         if (!chapterId || dirty || detail.units.some((unit) => unit.id === chapterId)) return;
@@ -233,12 +229,24 @@ export default function ProjectChaptersView({ detail, refreshProject }: ProjectD
     });
     const createMutation = useMutation({
         mutationFn: (values: { title: string; sourceText?: string }) => createProjectUnit(detail.project.id, { kind: "chapter", title: values.title, sourceText: plainTextToHtml(values.sourceText || ""), position: detail.units.length }),
-        onSuccess: ({ unit }) => { setCreateOpen(false); setSelectedId(unit.id); refreshProject(); navigate(`/projects/${detail.project.id}/chapters/${unit.id}`); message.success("章节已创建"); },
+        onSuccess: async ({ unit }) => {
+            await updateChapterListCache(queryClient, detail.project.id, [unit]);
+            setCreateOpen(false);
+            navigate(`/projects/${detail.project.id}/chapters/${unit.id}`);
+            refreshProject();
+            message.success("章节已创建");
+        },
         onError: (error) => message.error(error instanceof Error ? error.message : "章节创建失败"),
     });
     const importMutation = useMutation({
         mutationFn: (chapters: Array<{ title: string; plainText: string }>) => importProjectUnits(detail.project.id, chapters.map((chapter) => ({ kind: "chapter", title: chapter.title, sourceText: plainTextToHtml(chapter.plainText) }))),
-        onSuccess: ({ units }) => { setImportOpen(false); if (units[0]) { setSelectedId(units[0].id); navigate(`/projects/${detail.project.id}/chapters/${units[0].id}`); } refreshProject(); message.success(`已导入 ${units.length} 章`); },
+        onSuccess: async ({ units }) => {
+            await updateChapterListCache(queryClient, detail.project.id, units);
+            setImportOpen(false);
+            if (units[0]) navigate(`/projects/${detail.project.id}/chapters/${units[0].id}`);
+            refreshProject();
+            message.success(`已导入 ${units.length} 章`);
+        },
         onError: (error) => message.error(error instanceof Error ? error.message : "小说导入失败"),
     });
     const reorderMutation = useMutation({
@@ -248,13 +256,13 @@ export default function ProjectChaptersView({ detail, refreshProject }: ProjectD
     });
     const deleteMutation = useMutation({
         mutationFn: (unitId: string) => deleteProjectUnit(detail.project.id, unitId),
-        onSuccess: (_, unitId) => {
+        onSuccess: async (_, unitId) => {
             const index = orderedIds.indexOf(unitId);
             const remaining = orderedIds.filter((id) => id !== unitId);
+            await updateChapterListCache(queryClient, detail.project.id, [], [unitId]);
             setOrderedIds(remaining);
             if (selectedId === unitId) {
                 const nextId = remaining[Math.min(index, remaining.length - 1)] || "";
-                setSelectedId(nextId);
                 navigate(nextId ? `/projects/${detail.project.id}/chapters/${nextId}` : `/projects/${detail.project.id}/chapters`, { replace: true });
             }
             refreshProject();
@@ -494,7 +502,6 @@ export default function ProjectChaptersView({ detail, refreshProject }: ProjectD
     const selectChapter = (unitId: string) => {
         if (unitId === selectedId) return;
         if (dirty) { message.warning("请先保存当前章节，再切换章节"); return; }
-        setSelectedId(unitId);
         sessionStorage.setItem(`project-active-chapter:${detail.project.id}`, unitId);
         navigate(`/projects/${detail.project.id}/chapters/${unitId}`);
     };

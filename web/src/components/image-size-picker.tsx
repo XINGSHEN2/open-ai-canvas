@@ -158,7 +158,7 @@ export function ImageSizePicker({
         <div className="image-size-picker">
             {profile.resolution.supported ? (
                 <>
-                    <div className="image-size-label">分辨率</div>
+                    <div className="image-size-label">{profile.size.parameter === "size" ? "尺寸档位" : "分辨率"}</div>
                     <div className="image-size-tiers">
                         {profile.resolution.values.map((value) => (
                             <button
@@ -179,7 +179,7 @@ export function ImageSizePicker({
                 </>
             ) : !ungrouped && visibleTiers.length && (profile.size.parameter === "size" || !profile.quality.supported || imageResolutionUsesQuality(profile)) ? (
                 <>
-                    <div className="image-size-label">分辨率</div>
+                    <div className="image-size-label">{profile.size.parameter === "size" ? "尺寸档位" : "分辨率"}</div>
                     <div className="image-size-tiers">
                         {visibleTiers.map((value) => (
                             <button type="button" key={value} aria-pressed={size !== "auto" && active?.tier === value} onClick={() => changeTier(value)}>
@@ -214,6 +214,7 @@ export function ImageSizePicker({
                     >
                         <span className="image-size-ratio-icon" style={{ width: 24 * Math.min(1, preset.width / preset.height), height: 24 * Math.min(1, preset.height / preset.width) }} />
                         <span>{preset.ratio}</span>
+                        {profile.size.parameter === "size" ? <small>{preset.width} × {preset.height}</small> : null}
                     </button>
                 ))}
             </div>
@@ -221,6 +222,7 @@ export function ImageSizePicker({
             <output aria-live="polite" className="image-size-output">
                 {size === "auto" ? "尺寸由模型决定" : active ? `${active.ratio} · ${active.width} × ${active.height} px` : size.replace("x", " × ")}
             </output>
+            {profile.size.parameter === "size" ? <p className="image-size-hint">按所选宽 × 高（像素）生成。档位名称不代表固定长边或短边，请以具体尺寸为准。</p> : null}
             {profile.size.parameter === "aspect_ratio" ? <p className="image-size-hint">尺寸为换算参考，实际像素由模型决定{!imageResolutionUsesQuality(profile) && visibleTiers.length <= 1 ? "；当前协议未配置独立分辨率" : ""}。</p> : null}
             {profile.size.allowCustom ? (
                 <details className="image-size-custom">

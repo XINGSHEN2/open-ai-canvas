@@ -36,10 +36,10 @@ func (s *Service) validateLocalGuestTask(userID string, input map[string]any) er
 	base := channel.BaseURL
 	protocol, _ := config["interfaceType"].(string)
 	mode, _ := input["mode"].(string)
-	if !((key == "qwen-image-2.1" && protocol == "openai-image" && mode == "image") || (key == "minimax-h3-ref2va" && protocol == "minimax-video" && mode == "video")) {
+	if !((key == "qwen-image-2.1" && protocol == "openai-image" && mode == "image") || (key == "minimax-h3-ref2va" && protocol == "minimax-video" && mode == "video") || (key == "GLM-5.3" && protocol == "chat-completion" && mode == "text")) {
 		return Forbidden("访客不能选择其它协议或执行器")
 	}
-	if channelID == "" || !((base == "http://10.42.1.1:9008/v1" && key == "qwen-image-2.1") || (base == "http://10.42.1.2:30011" && key == "minimax-h3-ref2va")) {
+	if channelID == "" || !((base == "http://10.42.1.1:9008/v1" && key == "qwen-image-2.1") || (base == "http://10.42.1.2:30011" && key == "minimax-h3-ref2va") || (base == "https://api.moark.com/v1" && key == "GLM-5.3")) {
 		return Forbidden("访客只能使用本地共享模型")
 	}
 	return nil

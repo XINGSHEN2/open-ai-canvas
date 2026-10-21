@@ -25,7 +25,7 @@ export default function ProjectWorkflowView({ detail, projectId, unitId, stage }
     const { message } = App.useApp();
     const orderedUnits = useMemo(() => detail.units.slice().sort((left, right) => left.position - right.position), [detail.units]);
     const unit = orderedUnits.find((item) => item.id === unitId) || orderedUnits[0];
-    const activeStage = workflowStages.some((item) => item.key === stage) ? stage as ShortDramaWorkflowStage : "video";
+    const activeStage = stage !== "storyboard" && stage !== "previz" && workflowStages.some((item) => item.key === stage) ? stage as ShortDramaWorkflowStage : "video";
     const shots = useMemo(() => (detail.shots || []).filter((item) => item.unitId === unit?.id).slice().sort((left, right) => left.position - right.position), [detail.shots, unit?.id]);
     const workflow = useMemo(() => (detail.workflows || []).find((item) => item.instance?.unitId === unit?.id && (item.steps || []).some((step) => step.stepKey === "previz")), [detail.workflows, unit?.id]);
     const rememberedShotId = sessionStorage.getItem(`project-workflow-selected-shot:${projectId}`) || "";
