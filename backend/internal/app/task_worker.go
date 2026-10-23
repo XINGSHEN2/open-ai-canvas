@@ -427,10 +427,16 @@ func (s *Service) shouldDeferProviderTask(task model.Task, decryptedInput string
 		return false
 	}
 	if isVideoTaskType(task.Type) || input.Mode == "video" {
-		return resolved.InterfaceType == string(model.ChannelInterfaceNewAPIChannel2)
+		// MiniMax's adapter resumes with the persisted upstream ID and skips create.
+		// Keep this allowlist narrow: a deadline is not permission to resubmit a job.
+		return resolved.InterfaceType == string(model.ChannelInterfaceNewAPIChannel2) ||
+			resolved.InterfaceType == string(model.ChannelInterfaceMiniMaxVideo)
 	}
 	if input.Mode != "image" && !strings.HasPrefix(task.Type, "canvas_image") {
 		return false
+	}
+	if isLocalQwenImageConfig(resolved) {
+		return qwenImageTaskCanResume(task, time.Now())
 	}
 	return s.imageProviderSupportsTaskResume(resolved.InterfaceType)
 }

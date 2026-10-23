@@ -607,6 +607,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
             {renderPromptEditor(false)}
             {mode === "video" && /minimax.*h3/i.test(config.model) ? <IRPromptButton
                 key={node.id}
+                persistenceKey={`canvas-node:${node.id}`}
                 prompt={prompt}
                 fingerprint={JSON.stringify([node.id, prompt, config.model, config.videoSeconds, config.size, config.vquality, activeReferences])}
                 disabled={isRunning}

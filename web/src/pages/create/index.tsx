@@ -49,7 +49,6 @@ const loadCreationRuntime = () => import("./creation-runtime");
 type CreationRuntime = Awaited<ReturnType<typeof loadCreationRuntime>>;
 
 const TEXT_STREAMING_PREF_KEY = "creation.composer.text-streaming";
-const TEXT_THINKING_PREF_KEY = "creation.composer.text-thinking";
 
 function readComposerPref(key: string, fallback: boolean): boolean {
     try {
@@ -114,7 +113,6 @@ export default function CreatePage() {
     const [videoQuality, setVideoQuality] = useState(config.vquality || "720");
     const [count, setCount] = useState(String(Math.max(1, Math.min(4, Number(config.count) || 1))));
     const [textStreaming, setTextStreaming] = useState(() => readComposerPref(TEXT_STREAMING_PREF_KEY, true));
-    const [textThinking, setTextThinking] = useState(() => readComposerPref(TEXT_THINKING_PREF_KEY, false));
     const [busy, setBusy] = useState(false);
     const [referenceReplacementBusy, setReferenceReplacementBusy] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
@@ -202,8 +200,7 @@ export default function CreatePage() {
 
     useEffect(() => {
         writeComposerPref(TEXT_STREAMING_PREF_KEY, textStreaming);
-        writeComposerPref(TEXT_THINKING_PREF_KEY, textThinking);
-    }, [textStreaming, textThinking]);
+    }, [textStreaming]);
     useEffect(() => {
         if (!composerPreferencesHydrated || composerPreferencesInitialized) return;
         const saved = useCreationPreferencesStore.getState().preferences;
@@ -624,7 +621,7 @@ export default function CreatePage() {
             videoCount: referenceVideos.length,
             audioCount: referenceAudios.length,
             characterCount: 0,
-        });
+        }, videoProfile.operations);
         const skillReferences = references.flatMap((reference) => (reference.skill ? [reference.skill] : []));
         let runtime: CreationRuntime;
         try {
@@ -717,7 +714,7 @@ export default function CreatePage() {
                     metadata: { source: "create-page", conversationId: activeConversation.id, messageId: assistantMessage.id, ...referenceMetadata },
                     onTaskUpdate: bindTask,
                     streamText: textStreaming,
-                    enableThinking: textThinking,
+                    enableThinking: false,
                     onTextDelta: textStreaming ? (value) => updateOriginAssistant((item) => ({ ...item, content: value })) : undefined,
                     ...retryContext,
                 }));
@@ -1006,6 +1003,7 @@ export default function CreatePage() {
     };
 
     const composerProps = {
+        irScope: activeConversation?.id || "new",
         mode,
         prompt,
         setPrompt,
@@ -1047,8 +1045,6 @@ export default function CreatePage() {
         setCount: setComposerCount,
         textStreaming,
         setTextStreaming,
-        textThinking,
-        setTextThinking,
         promptOptimizerProvider,
         composerFocusRef,
         onPromptFocus: loadAddedSkills,

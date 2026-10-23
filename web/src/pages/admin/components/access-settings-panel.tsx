@@ -213,6 +213,17 @@ export default function AccessSettingsPanel() {
         }
     };
 
+    const togglePasswordOnly = async (passwordOnly: boolean) => {
+        if (!registration || savingRegistration) return;
+        setSavingRegistration(true);
+        try {
+            const data = await updateAdminRegistrationSetting({ enabled: registration.enabled, passwordOnly });
+            setRegistration(data.setting);
+            message.success(passwordOnly ? "已启用内网用户名密码注册" : "已关闭简化注册");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "更新失败");
+        } finally { setSavingRegistration(false); }
+    };
     const requestRegistrationChange = (enabled: boolean) => {
         if (!registration || enabled === registration.enabled || savingRegistration) return;
         void toggleRegistration(enabled).catch(() => undefined);
@@ -346,6 +357,13 @@ export default function AccessSettingsPanel() {
                             <span>{formatSettingTime(registration.updatedAt, "当前来自部署环境默认值")}</span>
                         </div>
                         <Switch checked={registration.enabled} loading={savingRegistration} disabled={loading || refreshing || savingLinuxDO} onChange={requestRegistrationChange} aria-label="允许创建新账号，切换后立即生效" />
+                    </div>
+                    <div className="admin-access-registration-policy">
+                        <div>
+                            <strong>内网简化注册（用户名＋密码）</strong>
+                            <p>仅建议可信内网使用。不要求邮箱或短信验证，仍受上方注册总开关控制；关闭后恢复验证码注册。没有绑定联系方式的用户需由管理员协助找回密码。</p>
+                        </div>
+                        <Switch checked={Boolean(registration.passwordOnly)} loading={savingRegistration} disabled={loading || refreshing || savingLinuxDO} onChange={togglePasswordOnly} aria-label="启用内网用户名密码注册" />
                     </div>
                 </SettingsSectionCard>
             </div>

@@ -14,6 +14,7 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { buildBackendToolRequests, type ResponseFunctionTool, type ResponseInputMessage, type ToolChoice, type ToolResponseResult } from "@/services/api/image";
 import { assertAgentExchangeBudget } from "@/lib/canvas/agent-context-budget";
+import { compileIRPrompt, hasIRResourceReferences, irPromptForTextHistory } from "@/lib/ir-reference-bindings";
 
 export { logicalModelIDForConfig };
 
@@ -211,7 +212,7 @@ function generationOperation(options: BackendGenerationTaskOptions) {
         videoCount: options.referenceVideos?.length ?? 0,
         audioCount: options.referenceAudios?.length ?? 0,
         characterCount: 0,
-    }, options.metadata?.videoEditOperation as string | undefined);
+    }, options.metadata?.videoEditOperation as string | undefined, modelCapabilityConfigFor(options.config, options.config.model || options.config.videoModel).video?.operations);
 }
 
 export function isGenerationTaskCancelled(error: unknown, signal?: AbortSignal) {
@@ -285,7 +286,15 @@ export async function prepareBackendGenerationTask(options: BackendGenerationTas
 }
 
 function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepared: PreparedGenerationReferences): CreateTaskInput {
-    const { projectId, mode, prompt, config, metadata } = options;
+    const { projectId, mode, config, metadata } = options;
+    if (mode !== "video" && hasIRResourceReferences(options.prompt)) {
+        throw new Error("当前提示词含有 IR 视频素材引用，请切回视频模式，或移除这些引用后再生成");
+    }
+    const prompt = mode === "video" ? compileIRPrompt(options.prompt, [
+        ...prepared.referenceImages.map((item) => ({ kind: "image" as const, resourceId: resourceIdFromStorageKey(item.storageKey) || "" })),
+        ...prepared.referenceVideos.map((item) => ({ kind: "video" as const, resourceId: resourceIdFromStorageKey(item.storageKey) || "" })),
+        ...prepared.referenceAudios.map((item) => ({ kind: "audio" as const, resourceId: resourceIdFromStorageKey(item.storageKey) || "" })),
+    ]) : options.prompt;
     const videoOperation = generationOperation(options);
     const workflow = resolveGenerationWorkflowExecution(config, mode);
     const logicalModelId = workflow ? "" : logicalModelIDForConfig(config);
@@ -303,7 +312,7 @@ function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepa
             ...(workflow ? { execution: workflowPublicExecution(workflow) } : {}),
             config: backendProviderConfig(config, mode),
             capabilityOptions: logicalModelId ? logicalCapabilityOptions(config, mode) : undefined,
-            textHistory: options.textHistory,
+            textHistory: options.textHistory?.map((entry) => ({ ...entry, content: irPromptForTextHistory(entry.content) })),
             ...(mode === "text" ? { textOptions: { stream: options.streamText !== false, thinking: options.enableThinking === true } } : {}),
             referenceImages: prepared.referenceImages,
             referenceVideos: prepared.referenceVideos,

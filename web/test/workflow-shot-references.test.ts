@@ -2,15 +2,30 @@ import { describe, expect, test } from "bun:test";
 
 import { canvasResourceMentionToken } from "@/lib/canvas/canvas-resource-references";
 import type { ProjectAsset, ProjectDetail } from "@/services/api/projects";
-import { buildShotAssetReferenceContext, ensureShotAssetMentionPrompt, resolveShotAssetMentionPrompt } from "@/pages/projects/detail/workflow-shot-references";
+import { buildShotAssetReferenceContext, ensureShotAssetMentionPrompt, resolveShotAssetMentionPrompt, shotIRReferences } from "@/pages/projects/detail/workflow-shot-references";
+import { prepareIRReferences } from "../src/lib/ir-references";
 
 describe("workflow shot asset references", () => {
+    test("voice-sample/audio dedup retains every asset alias for IR without duplicating slots", () => {
+        const project = detail();
+        project.assets[1].character!.voice = { profile: { sampleResourceId: "rain-audio" }, instructions: "" } as NonNullable<ProjectAsset["character"]>["voice"];
+        const duplicate = { ...project.assets[2], id: "another-audio", title: "同一声音", primaryVersionId: "another-version" };
+        project.assets.push(duplicate);
+        project.shotReferences.push({ id: "another-link", shotId: "shot-1", assetVersionId: "another-version", role: "reference", status: "linked", createdAt: "2026-08-29T00:00:04Z" });
+        const context = buildShotAssetReferenceContext(project, "shot-1");
+        expect(context.referenceAudios).toHaveLength(1);
+        expect(context.referenceAudios[0].id).toBe("project-character-voice:asset-character");
+        const prepared = prepareIRReferences("@[asset:asset-audio] 和 @[asset:another-audio]，@雨声 与 @同一声音", shotIRReferences(context));
+        expect(prepared.prompt).toBe("<Audio 1> 和 <Audio 1>，<Audio 1> 与 <Audio 1>");
+        expect(prepared.assets.filter((asset) => asset.kind === "audio")).toHaveLength(1);
+    });
     test("builds ordered image references for bound media and characters", () => {
         const context = buildShotAssetReferenceContext(detail(), "shot-1");
 
-        expect(context.mentionReferences.map((reference) => reference.label)).toEqual(["雨夜街道", "林默"]);
+        expect(context.mentionReferences.map((reference) => reference.label)).toEqual(["雨夜街道", "林默", "雨声"]);
         expect(context.referenceImages.map((image) => image.id)).toEqual(["asset-scene", "asset-character"]);
         expect(context.referenceImages[1]?.storageKey).toBe("resource:character-cover");
+        expect(context.referenceAudios.map((audio) => audio.storageKey)).toEqual(["resource:rain-audio"]);
     });
 
     test("resolves asset tokens to the submitted reference image order", () => {

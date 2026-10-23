@@ -18,6 +18,7 @@ import { clearResourceAccessCache } from "@/services/api/resources";
 import { clearResourceBlobCache } from "@/services/resource-blob-cache";
 import { withGenerationConsumersPaused } from "@/services/generation-consumer-lifecycle";
 import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
+import { loadModelCatalogWithRetry, useModelCatalogLoad } from "@/lib/model-catalog-load";
 
 export async function switchUserStorageScope(userId?: string | null) {
     await withGenerationConsumersPaused(async () => {
@@ -32,9 +33,12 @@ export async function switchUserStorageScope(userId?: string | null) {
 }
 
 let sessionGeneration = 0;
+let catalogDefaultsNeeded = false;
+let catalogInFlight: { generation: number; promise: Promise<void> } | null = null;
 
 export async function applyUserSession(payload: AuthSessionPayload) {
     const generation = ++sessionGeneration;
+    useModelCatalogLoad.setState({ status: "idle", userId: payload.user?.id || "" });
     const previousUserId = useUserStore.getState().user?.id || "";
     const nextUserId = payload.user?.id || "";
     useUserStore.getState().setHydrated(false);
@@ -98,34 +102,15 @@ async function hydrateUserSessionData(payload: AuthSessionPayload, generation: n
     if (!hasPersistedValue(plugins)) usePluginStore.setState({ installations: [], runtimeStatuses: {}, pluginStates: {} });
     if (!persistedCreationPreferences) useCreationPreferencesStore.setState({ preferences: {} });
 
+    catalogDefaultsNeeded = !persistedConfig;
+    // Catalog loading must still run if unrelated workspace synchronization fails.
+    if (userId) void refreshSystemChannels().catch(() => {});
     if (userId) {
         await initializeRemoteUserDataSession(userId);
     } else {
         resetRemoteUserDataSync();
     }
 
-    void (async () => {
-        try {
-            const catalog = await getModelCatalog();
-            if (!isCurrentSession(generation, userId)) return;
-            if (!persistedConfig) {
-                // 只有首次配置缺失时才生成能力推荐；已有配置中的空数组代表用户明确清空。
-                const initialSystemConfig = {
-                    ...defaultConfig,
-                    channels: modelCatalogChannels(catalog),
-                    imageModels: undefined,
-                    videoModels: undefined,
-                    textModels: undefined,
-                    audioModels: undefined,
-                };
-                useConfigStore.getState().replaceConfig(normalizeConfigSnapshot({ config: initialSystemConfig }).config);
-            } else {
-                useConfigStore.getState().mergeSystemChannels(modelCatalogChannels(catalog));
-            }
-        } catch (error) {
-            if (isCurrentSession(generation, userId)) console.warn("模型目录后台刷新失败，保留本地配置", error);
-        }
-    })();
     if (isCurrentSession(generation, userId)) {
         recordDiagnosticEvent({
             category: "navigation",
@@ -159,8 +144,34 @@ function safeScopedStorageGet(key: string) {
 }
 
 export async function refreshSystemChannels() {
-    const catalog = await getModelCatalog();
-    useConfigStore.getState().mergeSystemChannels(modelCatalogChannels(catalog));
+    const generation = sessionGeneration;
+    const userId = useUserStore.getState().user?.id || "";
+    if (!userId) return;
+    if (catalogInFlight?.generation === generation) return catalogInFlight.promise;
+    const current = () => isCurrentSession(generation, userId);
+    const promise = (async () => {
+        useModelCatalogLoad.setState({ status: "loading", userId });
+        try {
+            const catalog = await loadModelCatalogWithRetry(getModelCatalog, current);
+            if (!catalog || !current()) return;
+            const channels = modelCatalogChannels(catalog);
+            if (catalogDefaultsNeeded) {
+                const config = useConfigStore.getState().config;
+                useConfigStore.getState().replaceConfig(normalizeConfigSnapshot({ config: {
+                    ...config, channels: [...channels, ...config.channels.filter((channel) => channel.scope !== "system")],
+                    imageModels: undefined, videoModels: undefined, textModels: undefined, audioModels: undefined,
+                } }).config);
+                catalogDefaultsNeeded = false;
+            } else useConfigStore.getState().mergeSystemChannels(channels);
+            useModelCatalogLoad.setState({ status: "ready", userId });
+        } catch (error) {
+            if (current()) useModelCatalogLoad.setState({ status: "error", userId });
+            throw error;
+        }
+    })();
+    catalogInFlight = { generation, promise };
+    try { await promise; }
+    finally { if (catalogInFlight?.promise === promise) catalogInFlight = null; }
 }
 
 // 目录仅接受系统渠道模型，避免畸形响应被当成空目录写入配置。

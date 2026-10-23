@@ -4,7 +4,8 @@ import { createModelChannel, defaultConfig, encodeChannelModel } from "../src/st
 import { submitBackendGenerationTask, type GenerationTaskDependencies } from "../src/services/api/generation-task";
 import type { GenerationTask } from "../src/services/api/task-center";
 import type { ProjectDetail } from "../src/services/api/projects";
-import { buildShotAssetReferenceContext, resolveShotAssetMentionPrompt } from "../src/pages/projects/detail/workflow-shot-references";
+import { buildShotAssetReferenceContext, resolveShotAssetMentionPrompt, shotIRReferences } from "../src/pages/projects/detail/workflow-shot-references";
+import { prepareIRReferences } from "../src/lib/ir-references";
 
 function videoTaskConfig() {
     const channel = createModelChannel({
@@ -158,4 +159,28 @@ test("background generation submission returns after task creation without waiti
 
     expect(submitted).toBe(task);
     expect(waitCalls).toBe(0);
+});
+
+test("bound video and standalone audio reach both IR and the video task in matching order", async () => {
+    const assets = ["video", "image", "audio", "image"].map((kind, index) => ({
+        id: `asset-${index}`, title: `素材${index}`, mediaType: kind, category: "other",
+        primaryVersionId: `version-${index}`, storageKey: `resource:media-${index}`,
+    }));
+    const context = buildShotAssetReferenceContext({ assets, shotReferences: assets.map((asset) => ({
+        shotId: "shot", assetVersionId: asset.primaryVersionId, status: "linked",
+    })) } as ProjectDetail, "shot");
+    const prompt = "@[asset:asset-0] @[asset:asset-1] @[asset:asset-2] @[asset:asset-3]";
+    expect(resolveShotAssetMentionPrompt(prompt, context)).toContain("视频1 图片1 音频1 图片2");
+    const ir = prepareIRReferences(prompt, shotIRReferences(context));
+    expect(ir.prompt).toBe("<Video 1> <Image 1> <Audio 1> <Image 2>");
+    let sent: Parameters<GenerationTaskDependencies["createTask"]>[0] | undefined;
+    await submitBackendGenerationTask({ mode: "video", prompt: resolveShotAssetMentionPrompt(prompt, context), config: videoTaskConfig(),
+        referenceImages: context.referenceImages, referenceVideos: context.referenceVideos, referenceAudios: context.referenceAudios,
+        metadata: { videoEditOperation: "reference_to_video" },
+    }, { createTask: async (input) => { sent = input; return { id: "test" } as GenerationTask; },
+        waitTask: async () => { throw new Error("must not wait"); }, createId: () => "test" });
+    expect(sent?.input.referenceImages.map((item) => item.storageKey)).toEqual(["resource:media-1", "resource:media-3"]);
+    expect(sent?.input.referenceVideos.map((item) => item.storageKey)).toEqual(["resource:media-0"]);
+    expect(sent?.input.referenceAudios.map((item) => item.storageKey)).toEqual(["resource:media-2"]);
+    expect(ir.assets.map((item) => item.resourceId)).toEqual(["media-1", "media-3", "media-0", "media-2"]);
 });

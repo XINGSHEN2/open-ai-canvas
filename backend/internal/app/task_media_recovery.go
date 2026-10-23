@@ -208,7 +208,7 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 				}
 				item.TempName, item.MIMEType, err = s.downloadTaskMedia(ctx, config, item.Reference.URL, checkpoint.Mode)
 				if err != nil {
-					return nil, &mediaRecoveryError{stage: "download", retryable: retryableMediaRecovery(err), cause: err}
+					return nil, &mediaRecoveryError{stage: "download", retryable: retryableMediaRecovery(err) || retryableQwenImageContentError(config, err), cause: err}
 				}
 				path = s.mediaTempPath(item.TempName)
 				if err := s.saveMediaCheckpoint(task, checkpoint, "download"); err != nil {

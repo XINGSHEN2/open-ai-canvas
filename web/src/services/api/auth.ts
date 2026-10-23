@@ -398,6 +398,7 @@ export function getAuthSettings() {
         VerificationPolicy & {
             firstUser: boolean;
             registrationEnabled: boolean;
+            passwordOnlyRegistration?: boolean;
             linuxdoEnabled: boolean;
             emailEnabled: boolean;
             emailCodeRequired: boolean;

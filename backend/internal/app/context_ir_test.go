@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +25,16 @@ func TestContextIRValidation(t *testing.T) {
 		if validateIRRequest(req) == nil {
 			t.Fatalf("accepted invalid input: %#v", req)
 		}
+	}
+	for i := 0; i < 8; i++ {
+		valid.Assets = append(valid.Assets, IRAsset{ResourceID: "image", Kind: "image"})
+	}
+	if err := validateIRRequest(valid); err != nil {
+		t.Fatal(err)
+	}
+	valid.Assets = append(valid.Assets, IRAsset{ResourceID: "ninth", Kind: "image"})
+	if validateIRRequest(valid) == nil {
+		t.Fatal("IR must reject nine images before contacting upstream")
 	}
 }
 
@@ -79,5 +90,44 @@ func TestContextIRUpstreamResponse(t *testing.T) {
 		if tc.ok && prompt != "optimized" {
 			t.Fatal("incorrect prompt")
 		}
+	}
+}
+
+func TestContextIRRequestIDIsIdempotentAndRejectsChangedInput(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"h3_prompt":"optimized"}}`))
+	}))
+	defer server.Close()
+	t.Setenv("CANVAS_CONTEXT_IR_BASE_URL", server.URL)
+	service := &Service{dataDir: t.TempDir()}
+	request := IRPromptRequest{RequestID: uuid.NewString(), Prompt: "test", Seconds: 5, Ratio: "16:9", Resolution: "480"}
+	first, err := service.CreateIRPrompt("owner", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.CreateIRPrompt("owner", request)
+	if err != nil || second.ID != first.ID {
+		t.Fatalf("duplicate request: %v %v", second, err)
+	}
+	for i := 0; i < 200; i++ {
+		job, err := service.IRPrompt("owner", first.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job.Status == "completed" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	result, err := service.IRPrompt("owner", first.ID)
+	if err != nil || result.Status != "completed" || calls.Load() != 1 {
+		t.Fatalf("status=%v error=%v calls=%d", result, err, calls.Load())
+	}
+	request.Prompt = "different"
+	if _, err = service.CreateIRPrompt("owner", request); err == nil {
+		t.Fatal("request ID reused for different input")
 	}
 }

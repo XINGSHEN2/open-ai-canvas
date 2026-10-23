@@ -55,8 +55,8 @@ export function ProjectVisualAssetCard({
                 </button>
                 <p className="mt-2 line-clamp-2 min-h-9 text-[var(--fs-label)] leading-[18px] text-foreground/55">{description || "查看资产设定与提示词"}</p>
                 <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-border/60 pt-2">
-                    <Button size="small" icon={<Sparkles className="size-3.5" />} loading={generating} disabled={busy} onClick={onGenerate}>
-                        {resourceId ? "重新生成" : "生成图片"}
+                    <Button size="small" icon={<Sparkles className="size-3.5" />} loading={generating} disabled={busy} onClick={onGenerate} title="根据资产描述与生图提示词生成新图，不会将现有图片作为参考图">
+                        {resourceId ? "按描述重生成" : "生成图片"}
                     </Button>
                     <Button size="small" icon={<ImageIcon className="size-3.5" />} disabled={generating || busy} onClick={onBind}>
                         绑定图片

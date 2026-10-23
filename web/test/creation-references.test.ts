@@ -5,6 +5,7 @@ import { creationAttachmentKind, creationFileAccepted, creationMediaAspectRatio,
 import {
     buildCreationMentionReferences,
     displayCreationPrompt,
+    expandCreationPrompt,
     reconcileCreationAttachmentLimit,
     reconcileCreationAttachmentLimits,
     removeCreationReferenceTokens,
@@ -27,6 +28,16 @@ function mediaAttachment(id: string, type: string): CreationAttachment {
 }
 
 describe("creation references", () => {
+    test("mixed media mappings use the same per-kind order as submitted arrays", () => {
+        const attachments = [mediaAttachment("motion", "video/mp4"), imageAttachment("first"), mediaAttachment("music", "audio/mpeg"), imageAttachment("second")];
+        const references = buildCreationMentionReferences([], attachments);
+        const result = expandCreationPrompt(references.map(canvasResourceMentionToken).join(" "), references, attachments);
+        expect(result).toContain("@视频1：参考视频 1");
+        expect(result).toContain("@图片1：参考图片 1");
+        expect(result).toContain("@音频1：参考音频 1");
+        expect(result).toContain("@图片2：参考图片 2");
+        expect(result).not.toContain("参考图片 4");
+    });
     test("removes attachments and prompt tokens beyond the current model limit", () => {
         const attachments = [imageAttachment("first"), imageAttachment("second"), imageAttachment("third")];
         const references = buildCreationMentionReferences([], attachments);

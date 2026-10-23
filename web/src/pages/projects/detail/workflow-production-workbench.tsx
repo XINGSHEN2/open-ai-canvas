@@ -54,7 +54,8 @@ import {
     formatDuration,
     type ShortDramaWorkflowStage,
 } from "./workflow-shared";
-import { buildShotAssetReferenceContext, ensureShotAssetMentionPrompt, resolveShotAssetMentionPrompt } from "./workflow-shot-references";
+import { buildShotAssetReferenceContext, ensureShotAssetMentionPrompt, resolveShotAssetMentionPrompt, shotIRReferences } from "./workflow-shot-references";
+import { useShotDraftHydration } from "./use-shot-draft-hydration";
 import { Select } from "@/components/ui/base/select";
 
 type ShotEditorValues = Omit<ShotRevisionInput, "durationMs"> & {
@@ -140,17 +141,18 @@ export default function WorkflowProductionWorkbench(props: Props) {
     const currentDurationSeconds = Number(watchedDuration || Math.max(0.5, (selectedShot?.durationMs || 3000) / 1000));
     const generationSeconds = String(Math.max(1, Math.round(currentDurationSeconds)));
     const generationReferenceAudios = generationCapability === "video" ? shotAssetReferenceContext.referenceAudios : [];
-    const videoEditOperation = generationCapability === "video" && shotAssetReferenceContext.referenceImages.length ? "reference_to_video" : undefined;
+    const generationReferenceVideos = generationCapability === "video" ? shotAssetReferenceContext.referenceVideos : [];
+    const videoEditOperation = generationCapability === "video" && (shotAssetReferenceContext.referenceImages.length || generationReferenceVideos.length || generationReferenceAudios.length) ? "reference_to_video" : undefined;
     const modelRequirements = useMemo<ModelRequirements>(() => ({
         capability: generationCapability,
-        input: { textCount: 1, imageCount: shotAssetReferenceContext.referenceImages.length, videoCount: 0, audioCount: generationReferenceAudios.length, characterCount: 0 },
+        input: { textCount: 1, imageCount: shotAssetReferenceContext.referenceImages.length, videoCount: generationReferenceVideos.length, audioCount: generationReferenceAudios.length, characterCount: 0 },
         videoOperation: videoEditOperation,
         videoSeconds: generationCapability === "video" ? generationSeconds : undefined,
         imageSize: generationCapability === "image" ? aspectRatio : undefined,
         options: generationCapability === "video"
             ? { size: aspectRatio, vquality: resolution, videoSeconds: Number(generationSeconds) }
             : { size: aspectRatio, quality: imageQuality },
-    }), [aspectRatio, generationCapability, generationReferenceAudios.length, generationSeconds, imageQuality, resolution, shotAssetReferenceContext.referenceImages.length, videoEditOperation]);
+    }), [aspectRatio, generationCapability, generationReferenceAudios.length, generationReferenceVideos.length, generationSeconds, imageQuality, resolution, shotAssetReferenceContext.referenceImages.length, videoEditOperation]);
     const routedModel = resolveCompatibleModel(effectiveConfig, selectedModel, modelRequirements) || selectedModel;
     const activeProfile = useMemo(() => modelCapabilityConfigFor(effectiveConfig, routedModel), [effectiveConfig, routedModel]);
     const videoProfile = generationCapability === "video" ? activeProfile.video : undefined;
@@ -230,7 +232,8 @@ export default function WorkflowProductionWorkbench(props: Props) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [creditsEnabled, quoteRequestKey]);
 
-    useEffect(() => {
+    const shotDraftSnapshot = JSON.stringify([revision, selectedShot?.title, selectedShot?.description, selectedShot?.durationMs, shotIndex, shotAssetReferenceContext.mentionReferences]);
+    useShotDraftHydration(selectedShot?.id || "", shotDraftSnapshot, editorDirty, () => {
         const shotDurationSeconds = Math.max(0.5, (revision?.durationMs || selectedShot?.durationMs || 3000) / 1000);
         const currentModel = selectedModelRef.current || initialModel;
         const normalizedDurationSeconds = generationCapability === "video" && currentModel
@@ -254,7 +257,7 @@ export default function WorkflowProductionWorkbench(props: Props) {
         setPreviewArtifactId("");
         setImagePreviewArtifact(null);
         setEditorDirty(!revision || videoPrompt !== revision.videoPrompt);
-    }, [effectiveConfig, form, generationCapability, initialModel, revision?.id, selectedShot?.id, shotAssetReferenceContext.mentionReferences]);
+    });
 
     const changeGenerationModel = (nextModel: string) => {
         selectedModelRef.current = nextModel;
@@ -292,7 +295,11 @@ export default function WorkflowProductionWorkbench(props: Props) {
                 revision: revisionInput(values),
             });
         },
-        onSuccess: async () => { setEditorDirty(false); await onRefresh(); message.success("镜头脚本已保存为新版本"); },
+        onSuccess: async (saved, values) => {
+            if (activeShotIdRef.current === saved.shot.id && JSON.stringify(form.getFieldsValue(true)) === JSON.stringify(values)) setEditorDirty(false);
+            await onRefresh();
+            message.success("镜头脚本已保存为新版本");
+        },
         onError: (error) => message.error(error instanceof Error ? error.message : "镜头保存失败"),
     });
 
@@ -363,6 +370,7 @@ export default function WorkflowProductionWorkbench(props: Props) {
                 prompt: skillExecution.prompt,
                 config,
                 referenceImages: shotAssetReferenceContext.referenceImages,
+                referenceVideos: generationReferenceVideos,
                 referenceAudios: generationReferenceAudios,
                 metadata: {
                     ...skillExecution.metadata,
@@ -374,12 +382,12 @@ export default function WorkflowProductionWorkbench(props: Props) {
                     artifactType,
                     role: "output",
                     source: "short-drama-workflow",
-                    ...(mode === "video" && shotAssetReferenceContext.referenceImages.length ? { videoEditOperation: "reference_to_video" } : {}),
+                    ...(videoEditOperation ? { videoEditOperation } : {}),
                     resolvedCharacterVersions: shotAssetReferenceContext.resolvedCharacterVersions,
                     artifactMetadata: { model: routedModel, aspectRatio, resolution, durationSeconds: values.durationSeconds, ...skillExecution.metadata },
                 },
             });
-            if (activeShotIdRef.current === submittingShot.id) setEditorDirty(false);
+            if (activeShotIdRef.current === submittingShot.id && JSON.stringify(form.getFieldsValue(true)) === JSON.stringify(values)) setEditorDirty(false);
             await onRefresh();
             message.success(`${productionStageCopy[activeStage as "storyboard" | "previz" | "video"].label}任务已提交`);
         } catch (error) {
@@ -480,18 +488,7 @@ export default function WorkflowProductionWorkbench(props: Props) {
                         <div className="workflow-shot-form-scroll thin-scrollbar">
                             <div className="workflow-form-section-heading"><span>镜头脚本</span><small>先写清镜头里发生什么，再调整生成参数</small></div>
                             <Form.Item name="title" label="镜头名称" rules={[{ required: true, message: "请输入镜头名称" }]}><Input placeholder="用一句话概括这个镜头" /></Form.Item>
-                            <Form.Item name="videoPrompt" label="视频提示词" rules={[{ required: true, message: "请输入视频提示词" }]}><ShotAssetMentionTextarea references={shotAssetReferenceContext.mentionReferences} /></Form.Item>
-                            {generationCapability === "video" && /minimax.*h3/i.test(selectedModel) ? <IRPromptButton
-                                key={selectedShot.id}
-                                prompt={watchedVideoPrompt}
-                                fingerprint={JSON.stringify([selectedShot.id, watchedVideoPrompt, selectedModel, generationSeconds, aspectRatio, resolution, shotAssetReferenceContext])}
-                                disabled={saveShot.isPending}
-                                prepare={async () => ({ ...prepareIRReferences(watchedVideoPrompt, [
-                                    ...shotAssetReferenceContext.mentionReferences.map((reference) => ({ ...reference, kind: "image" as const })),
-                                    ...generationReferenceAudios.map((audio, index) => ({ id: audio.id, nodeId: "", kind: "audio" as const, label: `音频${index + 1}`, title: audio.name, active: true, storageKey: audio.storageKey })),
-                                ]), seconds: Number(generationSeconds), ratio: aspectRatio, resolution: resolution.replace(/p$/i, "") })}
-                                onApply={(value) => { form.setFieldValue("videoPrompt", value); setEditorDirty(true); }}
-                            /> : null}
+                            <Form.Item name="videoPrompt" label="视频提示词" rules={[{ required: true, message: "请输入视频提示词" }]}><ShotAssetMentionTextarea references={shotAssetReferenceContext.mentionReferences} irReferences={shotIRReferences(shotAssetReferenceContext)} /></Form.Item>
                             <BoundAssets detail={detail} shotId={selectedShot.id} changing={changeAssetBinding.isPending} onUnlink={(reference) => changeAssetBinding.mutate({ reference })} />
                             {generationCapability !== "video" ? <div className="workflow-form-grid">
                                 <Form.Item name="action" label="表演与动作"><Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="按动作节拍描述人物表演、走位和物体运动" /></Form.Item>
@@ -562,7 +559,17 @@ export default function WorkflowProductionWorkbench(props: Props) {
                             <div className="workflow-generation-cost" aria-live="polite">
                                 {creditsEnabled && formattedGenerationCredits ? <><CreditSymbol /><span title={routeQuote ? modelQuoteDescription(routeQuote) : undefined}>本次{routeQuote?.estimated ? "预估" : "费用"} {formattedGenerationCredits} 积分</span></> : creditsEnabled && routedModel ? <span>本次费用将在提交时按实际规格计算</span> : null}
                             </div>
-                            <div className="flex items-center gap-2"><Button danger icon={<Trash2 className="size-4" />} loading={deleteShot.isPending} disabled={saveShot.isPending || selectedShotSubmitting || changeAssetBinding.isPending} onClick={requestDeleteShot}>删除镜头</Button><Button htmlType="submit" icon={<Save className="size-4" />} loading={saveShot.isPending} disabled={!editorDirty || deleteShot.isPending}>保存脚本</Button><Button type="primary" icon={<Play className="size-4" />} loading={selectedShotSubmitting || shotTask?.status === "queued" || shotTask?.status === "running"} disabled={deleteShot.isPending} onClick={() => void generateArtifact()}>{selectedShotSubmitting ? `${stageCopy.action}（正在提交）` : shotTask?.status === "queued" || shotTask?.status === "running" ? `${stageCopy.action}（已运行${shotTaskElapsed}）` : shotTask?.status === "failed" ? `${stageCopy.action}（上次失败，可重试）` : shotTask?.status === "succeeded" && !newestArtifact ? `${stageCopy.action}（已完成，正在同步）` : newestArtifact ? `${stageCopy.action}（已生成）` : stageCopy.action}</Button></div>
+                            <div className="flex items-center gap-2">
+                            {generationCapability === "video" && /minimax.*h3/i.test(selectedModel) ? <IRPromptButton
+                                key={selectedShot.id}
+                                persistenceKey={`shot:${projectId}:${selectedShot.id}`}
+                                prompt={watchedVideoPrompt}
+                                fingerprint={JSON.stringify([selectedShot.id, watchedVideoPrompt, selectedModel, generationSeconds, aspectRatio, resolution, shotAssetReferenceContext])}
+                                disabled={saveShot.isPending}
+                                prepare={async () => ({ ...prepareIRReferences(watchedVideoPrompt, shotIRReferences(shotAssetReferenceContext)), seconds: Number(generationSeconds), ratio: aspectRatio, resolution: resolution.replace(/p$/i, "") })}
+                                onApply={(value) => { form.setFieldValue("videoPrompt", value); setEditorDirty(true); }}
+                            /> : null}
+<Button danger icon={<Trash2 className="size-4" />} loading={deleteShot.isPending} disabled={saveShot.isPending || selectedShotSubmitting || changeAssetBinding.isPending} onClick={requestDeleteShot}>删除镜头</Button><Button htmlType="submit" icon={<Save className="size-4" />} loading={saveShot.isPending} disabled={!editorDirty || deleteShot.isPending}>保存脚本</Button><Button type="primary" icon={<Play className="size-4" />} loading={selectedShotSubmitting || shotTask?.status === "queued" || shotTask?.status === "running"} disabled={deleteShot.isPending} onClick={() => void generateArtifact()}>{selectedShotSubmitting ? `${stageCopy.action}（正在提交）` : shotTask?.status === "queued" || shotTask?.status === "running" ? `${stageCopy.action}（已运行${shotTaskElapsed}）` : shotTask?.status === "failed" ? `${stageCopy.action}（上次失败，可重试）` : shotTask?.status === "succeeded" && !newestArtifact ? `${stageCopy.action}（已完成，正在同步）` : newestArtifact ? `${stageCopy.action}（已生成）` : stageCopy.action}</Button></div>
                         </footer>
                     </Form>
                 </section>
@@ -640,12 +647,13 @@ function AssetLibrary({ detail, referenceByVersionId, changing, onToggle }: { de
     return <div className="workflow-asset-groups"><Input allowClear size="small" className="mb-2 w-full" value={keyword} onChange={(event) => setKeyword(event.target.value)} prefix={<Search className="size-3.5 text-foreground/35" />} placeholder="搜索资产名称" aria-label="搜索镜头资产" /><Select size="small" className="mb-2 w-full" value={category} options={[{ value: "all", label: `全部资产（${Object.values(assetsQuery.data?.categoryCounts || {}).reduce((sum, count) => sum + count, 0)}）` }, ...Object.entries(assetsQuery.data?.categoryCounts || {}).filter(([, count]) => count > 0).map(([value, count]) => ({ value, label: `${assetCategoryLabel(value)}（${count}）` }))]} onChange={(value) => { setCategory(value); setPage(1); }} />{assetsQuery.isLoading ? <div className="py-6 text-center text-xs text-foreground/45">正在读取资产…</div> : groups.length ? groups.map(([groupCategory, assets]) => <section key={groupCategory}><h3>{assetCategoryLabel(groupCategory)} <span>({assets.length})</span></h3><div className="workflow-asset-list">{assets.map((asset) => { const reference = asset.primaryVersionId ? referenceByVersionId.get(asset.primaryVersionId) : undefined; const active = Boolean(reference); const previewUrl = assetPreviewUrl(asset); return <button key={asset.id} type="button" className={`workflow-asset-row ${active ? "is-active" : ""}`} disabled={changing || !asset.primaryVersionId} aria-pressed={active} onClick={() => onToggle(asset, reference)}><span className="workflow-asset-thumb">{previewUrl ? <img src={previewUrl} alt="" loading="lazy" /> : asset.category === "character" ? <UsersRound /> : asset.mediaType === "image" ? <ImageIcon /> : <Box />}</span><span className="min-w-0 flex-1"><strong>{asset.title}</strong><small>{active ? "已绑定 · 点击取消" : `${assetCategoryLabel(asset.category)} · v${Math.max(1, asset.versionCount)}`}</small></span>{active ? <span className="workflow-bound-dot" /> : null}</button>; })}</div></section>) : <EmptyState size="compact" title={debouncedKeyword ? "没有找到匹配资产" : "项目还没有资产"} />}{total > pageSize ? <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2 text-[var(--fs-micro)] text-foreground/45"><span>{page}/{pages} · 共 {total} 项</span><span className="flex gap-1"><Button type="text" size="small" icon={<ChevronLeft className="size-3.5" />} disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} /><Button type="text" size="small" icon={<ChevronRight className="size-3.5" />} disabled={page >= pages} onClick={() => setPage((value) => Math.min(pages, value + 1))} /></span></div> : null}</div>;
 }
 
-function ShotAssetMentionTextarea({ value = "", onChange = () => undefined, references, variant = "motion" }: { value?: string; onChange?: (value: string) => void; references: ReturnType<typeof buildShotAssetReferenceContext>["mentionReferences"]; variant?: "scene" | "motion" }) {
+function ShotAssetMentionTextarea({ value = "", onChange = () => undefined, references, irReferences, variant = "motion" }: { value?: string; onChange?: (value: string) => void; references: ReturnType<typeof buildShotAssetReferenceContext>["mentionReferences"]; irReferences?: ReturnType<typeof shotIRReferences>; variant?: "scene" | "motion" }) {
     const isScene = variant === "scene";
     return (
         <CanvasResourceMentionTextarea
             value={value}
             references={references}
+            irReferences={irReferences}
             onChange={onChange}
             sendOnEnter={false}
             containerClassName={`workflow-shot-mention-container ${isScene ? "is-scene" : ""}`}

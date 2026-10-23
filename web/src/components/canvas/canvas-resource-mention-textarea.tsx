@@ -11,6 +11,7 @@ import { InlineReferencePreview, referencePreviewUrl, syncInlineMentionPreviews 
 import { MentionMenu, clamp, mentionCaretRect } from "./canvas-mention-menu";
 import { getEditableSelection, renderEditableContent, serializeEditableValue, setEditableSelection } from "./canvas-mention-editable";
 import { mapCanvasTextOffset, mergeCanvasText } from "@/lib/canvas/canvas-text-merge";
+import { irMentionReferences } from "@/lib/ir-reference-bindings";
 
 export { TOOL_ICON_MAP } from "./canvas-mention-chips";
 
@@ -39,6 +40,7 @@ export type MentionTextPart =
 type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "onChange" | "value"> & {
     value: string;
     references: CanvasResourceReference[];
+    irReferences?: CanvasResourceReference[];
     onSelectReference?: (reference: CanvasResourceReference) => CanvasResourceReference | undefined;
     onChange: (value: string) => boolean | void;
     onSubmit?: () => void;
@@ -63,7 +65,7 @@ function shouldSubmitOnEnter(event: { key: string; ctrlKey: boolean; metaKey: bo
 }
 
 export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Props>(function CanvasResourceMentionTextarea(
-    { value, references, onSelectReference, onChange, onSubmit, onKeyDown, className, containerClassName, style, highlightLabels = true, mentionMenuWidth = 320, sendOnEnter = true, onContentSizeChange, includeAssetLibrary = false, activeDropReferenceId, onReferenceFilesDrop, autoLinkEnabled = false, ...props },
+    { value, references, irReferences, onSelectReference, onChange, onSubmit, onKeyDown, className, containerClassName, style, highlightLabels = true, mentionMenuWidth = 320, sendOnEnter = true, onContentSizeChange, includeAssetLibrary = false, activeDropReferenceId, onReferenceFilesDrop, autoLinkEnabled = false, ...props },
     forwardedRef,
 ) {
     const rawTheme = useActiveTheme();
@@ -102,9 +104,10 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         return availableReferences.filter((item) => `${item.label} ${item.title} ${item.kind} ${item.category || ""} ${item.text || ""}`.toLowerCase().includes(query));
     }, [onSelectReference, mentionCanvasReferences, activeMentionCanvasReferences, availableReferences, mention]);
     const activeReferences = useMemo(() => {
-        if (!highlightLabels) return [];
-        return [...activeCanvasReferences, ...assetReferences.filter((item) => value.includes(canvasResourceMentionToken(item)))];
-    }, [activeCanvasReferences, assetReferences, highlightLabels, value]);
+        const bindings = irMentionReferences(value, irReferences || activeCanvasReferences);
+        if (!highlightLabels) return bindings;
+        return [...activeCanvasReferences, ...assetReferences.filter((item) => value.includes(canvasResourceMentionToken(item))), ...bindings];
+    }, [activeCanvasReferences, assetReferences, irReferences, highlightLabels, value]);
     const useRichEditor = Boolean(activeReferences.length);
     const autoLinkMatch = useMemo<CanvasResourceAutoLinkMatch | null>(() => autoLinkEnabled && autoLinkCursor !== null ? findCanvasResourceAutoLinkMatch(value, autoLinkCursor, activeCanvasReferences) : null, [activeCanvasReferences, autoLinkCursor, autoLinkEnabled, value]);
     const reportContentSize = useCallback((element: HTMLElement | null) => {
@@ -340,7 +343,8 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const referenceForDropTarget = (target: EventTarget | null) => {
         const element = target instanceof Element ? target.closest<HTMLElement>("[data-mention-reference-id]") : null;
         const referenceId = element?.dataset.mentionReferenceId;
-        return referenceId ? activeReferences.find((reference) => reference.id === referenceId) : undefined;
+        // A bound IR chip is immutable; replace the original attachment and re-optimize explicitly.
+        return referenceId && !referenceId.startsWith("@[ir:") ? activeReferences.find((reference) => reference.id === referenceId) : undefined;
     };
 
     const imageFilesFromTransfer = (event: DragEvent<HTMLDivElement>) => Array.from(event.dataTransfer.files).filter((file) => file.type.startsWith("image/"));
@@ -495,7 +499,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     onPointerDown={(event) => props.onPointerDown?.(event as unknown as React.PointerEvent<HTMLTextAreaElement>)}
                     onDoubleClick={(event) => {
                         const chip = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-mention-reference-id]") : null;
-                        const reference = chip ? availableReferences.find((item) => item.id === chip.dataset.mentionReferenceId) : undefined;
+                        const reference = chip ? [...availableReferences, ...activeReferences].find((item) => item.id === chip.dataset.mentionReferenceId) : undefined;
                         if (!reference || !referencePreviewUrl(reference)) return;
                         event.preventDefault();
                         event.stopPropagation();

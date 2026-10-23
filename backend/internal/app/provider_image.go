@@ -26,7 +26,12 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 	}
 	// Local Qwen implements the standard Images wire contract, including multipart
 	// edits. The generic plugin instead sends JSON references and a resolution tier.
-	localQwenImages := input.Config.InterfaceType == string(model.ChannelInterfaceOpenAIImage) && input.Config.Model == "qwen-image-2.1"
+	localQwenImages := isLocalQwenImageConfig(input.Config)
+	if localQwenImages {
+		if taskID := resumedProviderRequestID(ctx); taskID != "" {
+			return pollQwenImageTask(ctx, input.Config, taskID, defaultQwenImagePollPolicy())
+		}
+	}
 	if _, ok := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType); ok && !localQwenImages {
 		return runDeclarativeProtocolTask(ctx, input)
 	}
@@ -43,6 +48,13 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 		return runGeminiImageTask(ctx, input)
 	}
 	var payload imageResponse
+	var qwenPayload map[string]interface{}
+	var target interface{} = &payload
+	if localQwenImages {
+		target = &qwenPayload
+		ctx = withProviderRequestKind(ctx, "create")
+		input.Config.Headers = append(append([]OutboundHeader(nil), input.Config.Headers...), OutboundHeader{Name: "Prefer", Value: "respond-async"})
+	}
 	if input.Mask != nil {
 		// 蒙版编辑是强校验写路径：协议能力不明确时必须失败，不能静默退化为整图重绘。
 		if strings.TrimSpace(input.Config.InterfaceType) != string(model.ChannelInterfaceOpenAIImage) {
@@ -89,7 +101,7 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 		if err := writer.Close(); err != nil {
 			return nil, err
 		}
-		if err := postForm(ctx, input.Config, "/images/edits", writer.FormDataContentType(), body, &payload); err != nil {
+		if err := postForm(ctx, input.Config, "/images/edits", writer.FormDataContentType(), body, target); err != nil {
 			return nil, err
 		}
 	} else {
@@ -115,9 +127,12 @@ func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]
 		if key, value := imageSizeParameter(input.ImageCapability, input.Config.Size); value != "" {
 			body[key] = value
 		}
-		if err := postJSON(ctx, input.Config, "/images/generations", body, &payload); err != nil {
+		if err := postJSON(ctx, input.Config, "/images/generations", body, target); err != nil {
 			return nil, err
 		}
+	}
+	if localQwenImages {
+		return finishQwenImageCreate(ctx, input.Config, qwenPayload)
 	}
 	images, err := imageDataURLs(payload)
 	if err != nil {

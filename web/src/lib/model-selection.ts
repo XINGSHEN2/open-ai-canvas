@@ -145,7 +145,7 @@ export function modelCompatibilityError(config: AiConfig, model: string, require
         if (visualInputCount > profile.references.maxImages) return `最多支持 ${profile.references.maxImages} 张参考图`;
         if (input.videoCount > profile.references.maxVideos) return `最多支持 ${profile.references.maxVideos} 个参考视频`;
         if (input.audioCount > profile.references.maxAudios) return `最多支持 ${profile.references.maxAudios} 个参考音频`;
-        const operation = resolveVideoOperation(input, requirements.videoOperation);
+        const operation = resolveVideoOperation(input, requirements.videoOperation, profile.operations);
         if (operation !== "concat" && !profile.operations.includes(operation)) return `不支持${videoOperationLabel(operation)}`;
         return "";
     }
@@ -218,7 +218,7 @@ function logicalModelCompatibilityError(spec: NonNullable<NonNullable<AiConfig["
         if (!constraint && count > 0) return `不支持${kind}输入`;
         if (constraint && (count < constraint.min || count > constraint.max)) return `${kind}输入需为 ${constraint.min}-${constraint.max} 个`;
     }
-    const operation = requirements.capability === "video" && input ? resolveVideoOperation(input, requirements.videoOperation) : requirements.videoOperation;
+    const operation = requirements.capability === "video" && input ? resolveVideoOperation(input, requirements.videoOperation, spec.operations) : requirements.videoOperation;
     if (operation && spec.operations?.length && !spec.operations.includes(operation)) return "不支持当前生成模式";
     // 图片创作状态也会携带全局默认视频时长；这个字段只对视频模型有意义，
     // 不能把它拼进图片逻辑模型的能力匹配，否则图片模型会被误判为“不支持当前时长”。
@@ -435,8 +435,11 @@ export function modelGroupReferenceLimits(config: AiConfig, selected: string, ca
     );
 }
 
-export function inferVideoOperation(input: ModelInputSummary) {
+export function inferVideoOperation(input: ModelInputSummary, supportedOperations?: readonly string[]) {
     const visualInputCount = input.imageCount + input.characterCount;
+    // Ref2VA-only models treat all attached media as references, never keyframes.
+    if (supportedOperations?.length === 1 && supportedOperations[0] === "reference_to_video"
+        && visualInputCount + input.videoCount + input.audioCount > 0) return "reference_to_video";
     // 显式普通参考图使用参考模式；未提供角色统计的入口沿用原有数量语义。
     // 首尾帧图片或角色决定图生视频主模式，音频只作为附加参考，不应把组合请求
     // 提升为全模态参考；纯音频输入才使用独立的 audio_to_video 能力。
@@ -446,9 +449,9 @@ export function inferVideoOperation(input: ModelInputSummary) {
     return "text_to_video";
 }
 
-export function resolveVideoOperation(input: ModelInputSummary, storedOperation?: string) {
+export function resolveVideoOperation(input: ModelInputSummary, storedOperation?: string, supportedOperations?: readonly string[]) {
     if (storedOperation && !["text_to_video", "image_to_video", "audio_to_video", "extend", "reference_to_video"].includes(storedOperation)) return storedOperation;
-    return inferVideoOperation(input);
+    return inferVideoOperation(input, supportedOperations);
 }
 
 function videoOperationLabel(operation: string) {

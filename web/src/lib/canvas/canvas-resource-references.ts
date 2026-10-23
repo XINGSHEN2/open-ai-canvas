@@ -32,6 +32,8 @@ export type CanvasResourceReference = {
     assetId?: string;
     category?: AssetCategory;
     mentionToken?: string;
+    /** Additional assets may address the same submitted media slot after deduplication. */
+    mentionAliases?: Array<{ token: string; label: string }>;
     /** 仅 kind === "tool" 时使用，对应后端工具 ID。 */
     toolId?: number;
     /** 仅 kind === "tool" 时使用，对应工具类型（style/nine_grid/effect/motion）。 */

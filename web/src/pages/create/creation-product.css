@@ -133,9 +133,26 @@
     .creation-inspiration-filters { gap: 4px; }
     .creation-inspiration-filters button { padding-inline: 10px; }
     .creation-inspiration-footer { align-items: flex-start; flex-direction: column; }
-    .creation-home .creation-chat-dock { flex-wrap: wrap; gap: 12px; }
-    .creation-home .creation-chat-controls { flex: 1 1 100%; width: 100%; }
+    .creation-home .creation-chat-dock { gap: 12px; }
 }
+.app-user-workspace .creation-chat-dock-single-row {
+    flex-wrap: nowrap;
+    align-items: center;
+}
+.app-user-workspace .creation-chat-dock-single-row .creation-chat-controls {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+.creation-chat-dock-single-row .creation-chat-controls > * { flex-shrink: 0; }
+.creation-chat-dock-single-row > .ant-btn { flex-shrink: 0; white-space: nowrap; }
+.creation-chat-dock-single-row .creation-model-picker { max-width: 180px; }
+.creation-chat-dock-single-row .creation-chat-control.is-clear { padding-inline: 10px; }
+.creation-chat-dock-single-row .creation-chat-control.is-clear > span { display: none; }
 .app-user-workspace .creation-voice-trigger.ant-btn {
     width: 36px !important;
     min-width: 36px !important;

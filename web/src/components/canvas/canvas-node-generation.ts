@@ -19,6 +19,7 @@ import { nodeGenerationPrompt } from "@/lib/canvas/generation-contract";
 import type { ModelReferenceLimits } from "@/lib/model-selection";
 import type { Asset } from "@/stores/use-asset-store";
 import { resourceIdFromStorageKey } from "@/services/api/resources";
+import { hasIRResourceReferences } from "@/lib/ir-reference-bindings";
 
 export type CharacterGenerationReference = {
     nodeId: string;
@@ -90,19 +91,20 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const storyboardInputs = getConnectedStoryboardRows(nodeId, nodes, connections);
     assertResolvableGenerationMentions(prompt, mentionInputs);
     const hasExplicitResourceMention = hasResolvableGenerationMention(prompt, mentionInputs);
+    const hasIRBindings = hasIRResourceReferences(prompt);
     const isWorkflowSource = sourceNode?.type === CanvasNodeType.Config && isCanvasWorkflowProvider(sourceNode.metadata);
     const hasConnectedMedia = connectedInputs.some((input) => input.type === "image" || input.type === "video" || input.type === "audio" || input.type === "character");
     // 豆包音频按连线决定纯文本、参考音频或参考图片，不能因为提示词里没有逐个 @ 就丢掉已连接素材。
     const includeConnectedAudioMedia = Boolean(sourceNode && getNodeGenerationMode(sourceNode) === "audio");
-    if ((promptOnly && hasConnectedMedia) || (sourceNode ? Boolean(nodeGenerationPrompt(sourceNode).trim()) && (sourceNode.type === CanvasNodeType.Config || isWorkflowSource) : false) || hasExplicitResourceMention) {
-        const autoIncludeWorkflowMedia = isWorkflowSource || includeConnectedAudioMedia;
+    if ((promptOnly && hasConnectedMedia) || (sourceNode ? Boolean(nodeGenerationPrompt(sourceNode).trim()) && (sourceNode.type === CanvasNodeType.Config || isWorkflowSource) : false) || hasExplicitResourceMention || hasIRBindings) {
+        const autoIncludeWorkflowMedia = isWorkflowSource || includeConnectedAudioMedia || hasIRBindings;
         return buildComposerGenerationContext(
             mentionInputs,
             prompt,
             // 工作流节点由字段映射接收全部连线媒体；视频节点的历史首尾帧字段不能再额外追加参考图。
             autoIncludeWorkflowMedia || (promptOnly && hasConnectedMedia) ? [] : [sourceNode?.metadata?.videoStartFrameNodeId, sourceNode?.metadata?.videoEndFrameNodeId].filter((id): id is string => Boolean(id)),
             autoIncludeWorkflowMedia || (promptOnly && hasConnectedMedia),
-            connectedInputs,
+            hasIRBindings ? buildNodeMentionGenerationInputs(nodeId, nodes, connections) : connectedInputs,
         );
     }
 

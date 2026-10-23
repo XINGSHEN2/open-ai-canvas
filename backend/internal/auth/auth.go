@@ -48,6 +48,7 @@ type LoginRequest struct {
 }
 
 type PublicAuthSettings struct {
+	PasswordOnlyRegistration bool `json:"passwordOnlyRegistration"`
 	VerificationPolicy
 	SMSBindingAvailable   bool   `json:"smsBindingAvailable"`
 	EmailBindingAvailable bool   `json:"emailBindingAvailable"`
@@ -88,6 +89,10 @@ func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
 	if err != nil {
 		return nil, err
 	}
+	_, registration, err := s.readRegistrationSetting()
+	if err != nil {
+		return nil, err
+	}
 	emailEnabled, err := s.EmailEnabled()
 	if err != nil {
 		return nil, err
@@ -115,16 +120,17 @@ func (s *Service) PublicAuthSettings() (*PublicAuthSettings, error) {
 	p.SMSAndEmailRegistration = p.SMSAndEmailRegistration && smsRegister && emailEnabled
 	agreementTitle, agreementContent := s.RegistrationAgreement()
 	return &PublicAuthSettings{
-		VerificationPolicy:    p,
-		SMSBindingAvailable:   smsBind,
-		EmailBindingAvailable: emailEnabled,
-		FirstUser:             false,
-		RegistrationEnabled:   registrationEnabled,
-		LinuxDOEnabled:        s.LinuxDOEnabled(),
-		EmailEnabled:          emailEnabled,
-		EmailCodeRequired:     p.EmailRegistration || p.SMSAndEmailRegistration,
-		AgreementTitle:        agreementTitle,
-		AgreementContent:      agreementContent,
+		PasswordOnlyRegistration: registrationEnabled && registration.PasswordOnly,
+		VerificationPolicy:       p,
+		SMSBindingAvailable:      smsBind,
+		EmailBindingAvailable:    emailEnabled,
+		FirstUser:                false,
+		RegistrationEnabled:      registrationEnabled,
+		LinuxDOEnabled:           s.LinuxDOEnabled(),
+		EmailEnabled:             emailEnabled,
+		EmailCodeRequired:        p.EmailRegistration || p.SMSAndEmailRegistration,
+		AgreementTitle:           agreementTitle,
+		AgreementContent:         agreementContent,
 	}, nil
 }
 
@@ -163,7 +169,13 @@ func (s *Service) Register(req RegisterRequest) (*AuthSessionResult, error) {
 		if !registrationEnabled {
 			return nil, kernel.Forbidden("管理员未开放新用户注册")
 		}
-		if req.Ticket != "" {
+		_, registration, err := s.readRegistrationSetting()
+		if err != nil {
+			return nil, err
+		}
+		if registration.PasswordOnly && req.Ticket == "" && email == "" && req.Phone == "" && req.EmailCode == "" && req.SMSCode == "" {
+			// Explicit admin opt-in; no unverified contact information is accepted here.
+		} else if req.Ticket != "" {
 			verification, err = s.verifyTicket("register", VerificationConfirm{Ticket: req.Ticket, EmailCode: req.EmailCode, SMSCode: req.SMSCode})
 			if err != nil {
 				return nil, err

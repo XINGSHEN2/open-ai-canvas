@@ -1,14 +1,15 @@
-import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { canvasResourceMentionToken, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { assetCategoryLabel, normalizeAssetCategory } from "@/lib/asset-category";
 import { resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey } from "@/services/api/resources";
 import type { CharacterRepresentation, ProjectAsset, ProjectDetail, ShotAssetReference } from "@/services/api/projects";
 import type { AssetCategory } from "@/stores/use-asset-store";
 import type { ReferenceImage } from "@/types/image";
-import type { ReferenceAudio } from "@/types/media";
+import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 export type ShotAssetReferenceContext = {
     mentionReferences: CanvasResourceReference[];
     referenceImages: ReferenceImage[];
+    referenceVideos: ReferenceVideo[];
     referenceAudios: ReferenceAudio[];
     assetReferences: ShotPromptAssetReference[];
     resolvedCharacterVersions: Array<{ assetId: string; versionId: string }>;
@@ -18,7 +19,8 @@ export type ShotPromptAssetReference = {
     assetId: string;
     title: string;
     category: string;
-    imageIndex: number;
+    imageIndex?: number;
+    videoIndex?: number;
     audioIndex?: number;
     voiceDescription?: string;
     dialogue?: string;
@@ -31,55 +33,66 @@ export function buildShotAssetReferenceContext(detail: ProjectDetail, shotId: st
         if (reference.shotId !== shotId || reference.status !== "linked") return [];
         const asset = reference.asset || assetByVersionId.get(reference.assetVersionId);
         if (!asset || seenAssetIds.has(asset.id)) return [];
-        const image = projectAssetReferenceImage(asset, reference);
-        if (!image) return [];
+        const image = asset.mediaType === "video" || asset.mediaType === "audio" ? undefined : projectAssetReferenceImage(asset, reference);
+        const media = projectAssetReferenceMedia(asset, reference);
+        if (!image && !media) return [];
         seenAssetIds.add(asset.id);
-        return [{ asset, image, reference }];
+        return [{ asset, image, media, reference }];
     });
 
+    const referenceImages: ReferenceImage[] = [];
+    const referenceVideos: ReferenceVideo[] = [];
     const referenceAudios: ReferenceAudio[] = [];
     const audioIndexByResourceId = new Map<string, number>();
-    const assetReferences = entries.map(({ asset }, index) => {
-        const sampleResourceId = stringValue(asset.character?.voice?.profile.sampleResourceId);
+    const mentionReferences: CanvasResourceReference[] = [];
+    const addAudio = (audio: ReferenceAudio) => {
+        const key = audio.storageKey || audio.id;
+        let index = audioIndexByResourceId.get(key);
+        if (!index) {
+            index = referenceAudios.length + 1;
+            referenceAudios.push(audio);
+            audioIndexByResourceId.set(key, index);
+        }
+        return index;
+    };
+    const assetReferences = entries.map(({ asset, image, media }) => {
+        let imageIndex: number | undefined;
+        let videoIndex: number | undefined;
         let audioIndex: number | undefined;
+        if (image) { referenceImages.push(image); imageIndex = referenceImages.length; }
+        if (media && asset.mediaType === "video") { referenceVideos.push(media); videoIndex = referenceVideos.length; }
+        if (media && asset.mediaType === "audio") audioIndex = addAudio(media);
+        mentionReferences.push({
+            id: `project-asset:${asset.id}`, nodeId: "", assetId: asset.id,
+            kind: image ? (asset.character ? "character" : "image") : asset.mediaType === "video" ? "video" : "audio",
+            label: asset.title, title: asset.title, previewUrl: (image || media)?.url,
+            storageKey: (image || media)?.storageKey, active: true, category: projectAssetCategory(asset.category),
+        });
+        const sampleResourceId = stringValue(asset.character?.voice?.profile.sampleResourceId);
         if (sampleResourceId) {
-            audioIndex = audioIndexByResourceId.get(sampleResourceId);
-            if (!audioIndex) {
-                audioIndex = referenceAudios.length + 1;
-                audioIndexByResourceId.set(sampleResourceId, audioIndex);
-                referenceAudios.push({
+            audioIndex = addAudio({
                     id: `project-character-voice:${asset.id}`,
                     name: `${asset.title}-声音样本`,
                     type: "audio/*",
                     url: resourceFileUrl(sampleResourceId),
                     storageKey: resourceStorageKey(sampleResourceId),
-                });
-            }
+            });
         }
         return {
             assetId: asset.id,
             title: asset.title,
             category: asset.category,
-            imageIndex: index + 1,
+            ...(imageIndex ? { imageIndex } : {}),
+            ...(videoIndex ? { videoIndex } : {}),
             ...(audioIndex ? { audioIndex } : {}),
             ...(asset.character ? { voiceDescription: characterVoiceDescription(asset) } : {}),
         } satisfies ShotPromptAssetReference;
     });
 
     return {
-        mentionReferences: entries.map(({ asset, image }) => ({
-            id: `project-asset:${asset.id}`,
-            nodeId: "",
-            assetId: asset.id,
-            kind: asset.character ? "character" : "image",
-            label: asset.title,
-            title: asset.title,
-            previewUrl: image.url,
-            storageKey: image.storageKey,
-            active: true,
-            category: projectAssetCategory(asset.category),
-        })),
-        referenceImages: entries.map(({ image }) => image),
+        mentionReferences,
+        referenceImages,
+        referenceVideos,
         referenceAudios,
         assetReferences,
         resolvedCharacterVersions: entries.flatMap(({ asset, reference }) => asset.character ? [{ assetId: asset.id, versionId: reference.referencedVersion?.id || reference.assetVersionId || asset.character.versionId }] : []),
@@ -87,7 +100,8 @@ export function buildShotAssetReferenceContext(detail: ProjectDetail, shotId: st
 }
 
 export function resolveShotAssetMentionPrompt(prompt: string, context: ShotAssetReferenceContext, options: { dialogue?: string } = {}) {
-    const imageLabelByAssetId = new Map(context.mentionReferences.map((reference, index) => [reference.assetId, `图片${index + 1}`]));
+    const imageLabelByAssetId = new Map(context.assetReferences.map((reference) => [reference.assetId,
+        reference.imageIndex ? `图片${reference.imageIndex}` : reference.videoIndex ? `视频${reference.videoIndex}` : `音频${reference.audioIndex}`]));
     const unresolved = new Set<string>();
     const resolved = prompt.replace(/@\[asset:([^\]]+)\]/g, (token, assetId: string) => {
         const label = imageLabelByAssetId.get(assetId);
@@ -122,7 +136,7 @@ export function compileShotAssetReferencePrompt(references: ShotPromptAssetRefer
     if (!references.length) return "";
     const lines = references.flatMap((reference) => {
         const visualLabel = reference.category === "character" ? "人物参考" : `${projectAssetCategoryLabel(reference.category)}参考`;
-        const media = [`${visualLabel}：图片${reference.imageIndex}`, reference.audioIndex ? `声音参考：音频${reference.audioIndex}` : ""].filter(Boolean).join("；");
+        const media = [reference.imageIndex ? `${visualLabel}：图片${reference.imageIndex}` : "", reference.videoIndex ? `视频参考：视频${reference.videoIndex}` : "", reference.audioIndex ? `声音参考：音频${reference.audioIndex}` : ""].filter(Boolean).join("；");
         return [
             `- ${reference.title}：${media}`,
             reference.voiceDescription ? `  声音画像：${reference.voiceDescription}` : "",
@@ -130,6 +144,29 @@ export function compileShotAssetReferencePrompt(references: ShotPromptAssetRefer
         ].filter(Boolean);
     });
     return ["【资产参考】", "", ...lines].join("\n");
+}
+
+// IR and video submission share exactly the same per-kind ordering, including voice samples.
+export function shotIRReferences(context: ShotAssetReferenceContext): CanvasResourceReference[] {
+    return (["image", "video", "audio"] as const).flatMap((kind) => {
+        const media = kind === "image" ? context.referenceImages : kind === "video" ? context.referenceVideos : context.referenceAudios;
+        return media.map((item) => {
+            const matches = context.mentionReferences.filter((reference) => (reference.kind === "character" ? "image" : reference.kind) === kind && (reference.assetId === item.id || Boolean(kind === "audio" && item.storageKey && reference.storageKey === item.storageKey)));
+            const mention = matches[0];
+            return { ...mention, id: mention?.id || item.id, nodeId: "", kind, label: mention?.label || item.name, title: item.name, storageKey: item.storageKey, active: true,
+                mentionAliases: matches.slice(1).map((reference) => ({ token: canvasResourceMentionToken(reference), label: reference.label })),
+            };
+        });
+    });
+}
+
+function projectAssetReferenceMedia(asset: ProjectAsset, reference?: ShotAssetReference): ReferenceVideo | undefined {
+    if (asset.mediaType !== "video" && asset.mediaType !== "audio") return undefined;
+    const representation = reference?.referencedVersion?.representations.find((item) => item.mediaType.startsWith(asset.mediaType));
+    const storageKey = representation ? resourceStorageKey(representation.resourceId) : asset.storageKey;
+    if (!storageKey) return undefined;
+    const resourceId = resourceIdFromStorageKey(storageKey);
+    return { id: asset.id, name: asset.title, type: `${asset.mediaType}/*`, url: resourceId ? resourceFileUrl(resourceId) : "", storageKey, role: "reference" };
 }
 
 function projectAssetReferenceImage(asset: ProjectAsset, reference?: ShotAssetReference): ReferenceImage | undefined {

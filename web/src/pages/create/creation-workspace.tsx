@@ -84,6 +84,7 @@ export function CreationWorkspaceToolbar({ shots, onJumpToShot, onNewConversatio
 }
 
 type ComposerProps = {
+    irScope: string;
     variant: "empty" | "thread";
     mode: CreationMode;
     prompt: string;
@@ -126,8 +127,6 @@ type ComposerProps = {
     setCount: (value: string) => void;
     textStreaming: boolean;
     setTextStreaming: (value: boolean) => void;
-    textThinking: boolean;
-    setTextThinking: (value: boolean) => void;
     promptOptimizerProvider: PromptOptimizerProvider | null;
     composerFocusRef: RefObject<HTMLTextAreaElement | null>;
     onPromptFocus: () => void;
@@ -375,7 +374,7 @@ export function CreationComposer(props: ComposerProps) {
                 </div> : null}
             </div>
         </div>
-        <footer className="creation-chat-dock">
+        <footer className="creation-chat-dock creation-chat-dock-single-row">
             <div className="creation-chat-controls">
                 {props.variant === "thread" ? <ModePicker mode={props.mode} onModeChange={props.onModeChange} /> : null}
                 {referencesSupported && !props.attachments.length ? <Tooltip title={addReferenceLabel}><button type="button" className="creation-chat-control" onClick={props.onOpenLibrary} disabled={interactionBusy || !canAddMoreReferences} aria-label={addReferenceLabel}><Plus aria-hidden="true" /><span>参考内容</span></button></Tooltip> : null}
@@ -402,11 +401,12 @@ export function CreationComposer(props: ComposerProps) {
                 {props.mode === "video" ? <DurationMenu profile={props.videoProfile} seconds={props.seconds} onChange={props.setSeconds} /> : null}
                 {props.mode === "text" ? <>
                     <Tooltip title={interactionBusy ? "生成中，此开关将在下次发送时生效" : (props.textStreaming ? "流式输出已开启" : "流式输出已关闭")}><button type="button" className="creation-chat-control" aria-pressed={props.textStreaming} disabled={interactionBusy} onClick={() => props.setTextStreaming(!props.textStreaming)}><Waves /><span>流式</span></button></Tooltip>
-                    <Tooltip title={interactionBusy ? "生成中，此开关将在下次发送时生效" : (props.textThinking ? "思考已开启，会展示模型返回的推理摘要" : "开启模型思考")}><button type="button" className="creation-chat-control" aria-pressed={props.textThinking} disabled={interactionBusy} onClick={() => props.setTextThinking(!props.textThinking)}><Brain /><span>思考</span></button></Tooltip>
                 </> : null}
                 {props.prompt.trim() || props.attachments.length || props.references.some((reference) => reference.active) ? <Tooltip title="清空提示词和参考内容"><button type="button" className="creation-chat-control is-clear" onClick={props.onClearComposer} disabled={interactionBusy} aria-label="清空提示词和参考内容"><Trash2 /><span>清空</span></button></Tooltip> : null}
             </div>
             {props.mode === "video" && /minimax.*h3/i.test(props.model) ? <IRPromptButton
+                key={props.irScope}
+                persistenceKey={`creation:${props.irScope}`}
                 prompt={props.prompt}
                 fingerprint={JSON.stringify([props.prompt, props.model, props.seconds, props.ratio, props.videoQuality, props.references])}
                 disabled={interactionBusy}

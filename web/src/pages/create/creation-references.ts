@@ -2,6 +2,8 @@ import { buildSkillMentionReferences } from "@/services/skill-runtime";
 import { canvasResourceMentionToken, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import type { Skill } from "@/services/api/skills";
 import { creationAttachmentKind, type CreationAttachment } from "./creation-assets";
+import { displayIRPrompt } from "@/lib/ir-reference-bindings";
+import { resourceIdFromStorageKey } from "@/services/api/resources";
 
 export type CreationReference = CanvasResourceReference & {
     attachmentId?: string;
@@ -92,16 +94,26 @@ export function replaceCreationAttachmentReference(prompt: string, attachments: 
 }
 
 export function displayCreationPrompt(prompt: string, references: CreationReference[]) {
+    const visiblePrompt = expandOrdinaryCreationMentions(prompt, references);
+    return displayIRPrompt(visiblePrompt, references.flatMap((reference) => {
+        const kind = reference.kind === "character" ? "image" : reference.kind;
+        return kind === "image" || kind === "video" || kind === "audio" ? [{ kind, resourceId: resourceIdFromStorageKey(reference.storageKey) || "" }] : [];
+    }));
+}
+
+function expandOrdinaryCreationMentions(prompt: string, references: CreationReference[]) {
     return references.reduce((value, reference) => value.split(canvasResourceMentionToken(reference)).join(`@${reference.label}`), prompt);
 }
 
 export function expandCreationPrompt(prompt: string, references: CreationReference[], attachments: CreationAttachment[] = []) {
-    const visiblePrompt = displayCreationPrompt(prompt, references).trim();
+    // Keep resource bindings intact until final submission validates the actual media arrays.
+    const visiblePrompt = expandOrdinaryCreationMentions(prompt, references).trim();
     if (!references.length) return visiblePrompt;
 
     const contexts: string[] = [];
     const mediaMappings: string[] = [];
-    const attachmentPositions = new Map(attachments.map((attachment, index) => [attachment.id, index + 1]));
+    const counts = { image: 0, video: 0, audio: 0, file: 0 };
+    const attachmentPositions = new Map(attachments.map((attachment) => [attachment.id, ++counts[creationAttachmentKind(attachment)]]));
     references.forEach((reference) => {
         if (reference.attachmentId) {
             const position = attachmentPositions.get(reference.attachmentId);

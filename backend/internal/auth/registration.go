@@ -17,12 +17,14 @@ const registrationSettingKey = "registration"
 // RegistrationSettingRequest 的协议字段用指针区分「未提交」和「明确清空」：
 // 注册开关单独切换时不带协议字段，必须保留已保存的协议正文。
 type RegistrationSettingRequest struct {
+	PasswordOnly     *bool   `json:"passwordOnly"`
 	Enabled          bool    `json:"enabled"`
 	AgreementTitle   *string `json:"agreementTitle"`
 	AgreementContent *string `json:"agreementContent"`
 }
 
 type PublicRegistrationSetting struct {
+	PasswordOnly     bool      `json:"passwordOnly"`
 	Enabled          bool      `json:"enabled"`
 	AgreementTitle   string    `json:"agreementTitle"`
 	AgreementContent string    `json:"agreementContent"`
@@ -32,6 +34,7 @@ type PublicRegistrationSetting struct {
 }
 
 type registrationSettingValue struct {
+	PasswordOnly     bool   `json:"passwordOnly"`
 	Enabled          bool   `json:"enabled"`
 	AgreementTitle   string `json:"agreementTitle"`
 	AgreementContent string `json:"agreementContent"`
@@ -57,9 +60,13 @@ func (s *Service) UpdateRegistrationSetting(actor *model.User, req RegistrationS
 		return nil, err
 	}
 	nextValue := registrationSettingValue{
+		PasswordOnly:     currentValue.PasswordOnly,
 		Enabled:          req.Enabled,
 		AgreementTitle:   currentValue.AgreementTitle,
 		AgreementContent: currentValue.AgreementContent,
+	}
+	if req.PasswordOnly != nil {
+		nextValue.PasswordOnly = *req.PasswordOnly
 	}
 	if req.AgreementTitle != nil {
 		nextValue.AgreementTitle = strings.TrimSpace(*req.AgreementTitle)
@@ -136,6 +143,7 @@ func (s *Service) readRegistrationSetting() (*model.SystemSetting, registrationS
 
 func publicRegistrationSetting(setting *model.SystemSetting, value registrationSettingValue) *PublicRegistrationSetting {
 	result := &PublicRegistrationSetting{
+		PasswordOnly:     value.PasswordOnly,
 		Enabled:          value.Enabled,
 		AgreementTitle:   value.AgreementTitle,
 		AgreementContent: value.AgreementContent,

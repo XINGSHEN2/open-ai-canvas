@@ -9,6 +9,7 @@ import { ApiError } from "@/services/api/request";
 import { VerificationFields } from "@/components/auth/verification-fields";
 import { emptyVerification, methodLabels, verificationMethods, type VerificationMethod } from "@/services/api/verification";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
+import { completeRegistration } from "@/lib/complete-registration";
 
 type AuthSettings = Awaited<ReturnType<typeof getAuthSettings>>;
 
@@ -73,11 +74,22 @@ export default function RegisterPage() {
         registering.current = true;
         setSubmitting(true);
         try {
-            if (!settings?.firstUser && !verification.ticket) throw new Error("请先获取本次注册验证码");
-            await register({ username, ...(settings?.firstUser ? { email } : verification), displayName, password, acceptedTerms: agreementAccepted });
-            const { applyUserSession } = await import("@/lib/user-session");
-            await applyUserSession(await getAuthSession());
-            if (!settings?.firstUser) window.sessionStorage.setItem("yingce:model-setup-guide", "1");
+            if (!settings?.firstUser && !settings?.passwordOnlyRegistration && !verification.ticket) throw new Error("请先获取本次注册验证码");
+            const result = await completeRegistration(
+                () => register({ username, ...(settings?.firstUser ? { email } : settings?.passwordOnlyRegistration ? {} : verification), displayName, password, acceptedTerms: agreementAccepted }),
+                async () => {
+                    const { applyUserSession } = await import("@/lib/user-session");
+                    const session = await getAuthSession();
+                    if (!session.user) throw new Error("登录会话尚未建立");
+                    await applyUserSession(session);
+                },
+            );
+            if (!result.sessionReady) {
+                message.warning("账号已创建，但自动登录未完成。请使用刚才的用户名和密码登录，无需再次注册。");
+                navigate(`/login?next=${encodeURIComponent(next)}`, { replace: true });
+                return;
+            }
+            if (!settings?.firstUser) { try { window.sessionStorage.setItem("yingce:model-setup-guide", "1"); } catch { /* Optional onboarding flag. */ } }
             message.success(settings?.firstUser ? "管理员账号已创建" : "注册成功");
             navigate(next, { replace: true });
         } catch (error) {
@@ -97,7 +109,7 @@ export default function RegisterPage() {
 
     const registrationClosed = settings?.registrationEnabled === false;
     const methods = settings ? verificationMethods(settings, "register") : [];
-    const verificationUnavailable = Boolean(settings && !settings.firstUser && methods.length === 0);
+    const verificationUnavailable = Boolean(settings && !settings.firstUser && !settings.passwordOnlyRegistration && methods.length === 0);
     const disabled = !settings || registrationClosed || verificationUnavailable;
 
     return (
@@ -106,6 +118,9 @@ export default function RegisterPage() {
                 <Notice icon={<Info className="size-3.5" />} tone="blue">
                     首个账号自动成为管理员，邮箱验证码暂不要求。
                 </Notice>
+            ) : null}
+            {settings?.passwordOnlyRegistration && !registrationClosed ? (
+                <Notice icon={<Info className="size-3.5" />} tone="blue">内网简化注册：使用用户名和密码创建普通账号，无需邮箱或短信验证码。请妥善保管密码，未绑定邮箱或手机时需联系管理员协助找回。</Notice>
             ) : null}
             {registrationClosed ? (
                 <Notice icon={<TriangleAlert className="size-3.5" />} tone="amber">
@@ -120,7 +135,7 @@ export default function RegisterPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
                 <AuthField label="用户名">
-                    <Input size="large" prefix={<UserRound className="auth-scene-icon size-4" />} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="3-32 位字符" autoComplete="username" required disabled={disabled} />
+                    <Input size="large" prefix={<UserRound className="auth-scene-icon size-4" />} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="3–32 位字母、数字、下划线或连字符" pattern="[a-zA-Z0-9_-]{3,32}" autoComplete="username" required disabled={disabled} />
                 </AuthField>
                 <AuthField label="显示名称">
                     <Input size="large" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="不填则使用用户名" disabled={disabled} />
@@ -138,7 +153,7 @@ export default function RegisterPage() {
                     required={!settings?.firstUser}
                     disabled={disabled}
                 />
-            </AuthField> : <>
+            </AuthField> : settings?.passwordOnlyRegistration ? null : <>
                 {methods.length > 1 && <Segmented block aria-label="注册验证方式" options={methods.map((value) => ({ value, label: methodLabels[value] }))} value={method} disabled={submitting} onChange={(value) => { setMethod(value as VerificationMethod); setVerification({ ...emptyVerification }); }} />}
                 {methods.length > 0 && <VerificationFields key={method} purpose="register" method={method} value={verification} onChange={setVerification} disabled={disabled || submitting} />}
             </>}

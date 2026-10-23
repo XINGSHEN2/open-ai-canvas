@@ -40,13 +40,18 @@ paths:
               type: object
               required: [prompt, assets, seconds, ratio, resolution]
               properties:
+                requestId:
+                  type: string
+                  format: uuid
+                  description: 可选幂等请求 ID。同用户相同 ID 和输入返回已有任务；输入不同返回 400。
                 prompt: {type: string}
                 seconds: {type: integer, minimum: 5, maximum: 15}
                 ratio: {type: string, enum: ['16:9', '9:16']}
                 resolution: {type: string, enum: ['480', '768']}
                 assets:
                   type: array
-                  maxItems: 15
+                  maxItems: 14
+                  description: 按媒体类型分别编号，最多 8 张图片、3 段视频、3 段音频。
                   items:
                     type: object
                     required: [resourceId, kind, label]

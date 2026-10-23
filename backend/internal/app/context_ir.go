@@ -26,6 +26,7 @@ type IRAsset struct {
 	Label      string `json:"label"`
 }
 type IRPromptRequest struct {
+	RequestID  string    `json:"requestId,omitempty"`
 	Prompt     string    `json:"prompt"`
 	Assets     []IRAsset `json:"assets"`
 	Seconds    int       `json:"seconds"`
@@ -33,12 +34,13 @@ type IRPromptRequest struct {
 	Resolution string    `json:"resolution"`
 }
 type IRPromptJob struct {
-	ID         string     `json:"id"`
-	Status     string     `json:"status"`
-	Prompt     string     `json:"prompt,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+	RequestHash string     `json:"requestHash,omitempty"`
+	ID          string     `json:"id"`
+	Status      string     `json:"status"`
+	Prompt      string     `json:"prompt,omitempty"`
+	Error       string     `json:"error,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	FinishedAt  *time.Time `json:"finishedAt,omitempty"`
 }
 
 // Single-instance adapter. Disk results survive restart; interrupted jobs are never resubmitted.
@@ -48,6 +50,11 @@ var irJobs = struct {
 }{active: make(map[string]bool)}
 
 func validateIRRequest(req IRPromptRequest) error {
+	if req.RequestID != "" {
+		if _, err := uuid.Parse(req.RequestID); err != nil {
+			return BadAuthRequest("IR 请求 ID 无效")
+		}
+	}
 	if strings.TrimSpace(req.Prompt) == "" || len(req.Prompt) > 100000 {
 		return BadAuthRequest("请填写提示词（最多 100000 字节）")
 	}
@@ -70,8 +77,8 @@ func validateIRRequest(req IRPromptRequest) error {
 		}
 		counts[a.Kind]++
 	}
-	if counts["image"] > 9 || counts["video"] > 3 || counts["audio"] > 3 {
-		return BadAuthRequest("参考素材超出 H3 输入上限")
+	if counts["image"] > 8 || counts["video"] > 3 || counts["audio"] > 3 {
+		return BadAuthRequest("IR 最多支持 8 张图片、3 个视频和 3 个音频")
 	}
 	return nil
 }
@@ -137,21 +144,48 @@ func (s *Service) CreateIRPrompt(userID string, req IRPromptRequest) (*IRPromptJ
 	if err != nil {
 		return nil, err
 	}
-	job := IRPromptJob{ID: uuid.NewString(), Status: "running", CreatedAt: time.Now().UTC()}
+	requestBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(requestBody)
+	id := req.RequestID
+	if id == "" {
+		id = uuid.NewString()
+	}
+	job := IRPromptJob{ID: id, RequestHash: hex.EncodeToString(sum[:]), Status: "running", CreatedAt: time.Now().UTC()}
 	path := s.irJobPath(userID, job.ID)
 	irJobs.Lock()
+	if req.RequestID != "" {
+		raw, readErr := os.ReadFile(path)
+		if readErr == nil {
+			var existing IRPromptJob
+			decodeErr := json.Unmarshal(raw, &existing)
+			irJobs.Unlock()
+			if decodeErr != nil {
+				return nil, decodeErr
+			}
+			if existing.RequestHash != job.RequestHash {
+				return nil, BadAuthRequest("IR 请求 ID 已被其他输入使用")
+			}
+			return &existing, nil
+		}
+		if !os.IsNotExist(readErr) {
+			irJobs.Unlock()
+			return nil, readErr
+		}
+	}
 	if len(irJobs.active) >= 2 {
 		irJobs.Unlock()
 		return nil, WrapAppError(429, "IR 正在处理其他请求，请稍后重试", nil)
 	}
 	irJobs.active[path] = true
-	irJobs.Unlock()
 	if err := saveIRJob(path, job); err != nil {
-		irJobs.Lock()
 		delete(irJobs.active, path)
 		irJobs.Unlock()
 		return nil, err
 	}
+	irJobs.Unlock()
 	go func(job IRPromptJob) {
 		defer func() { irJobs.Lock(); delete(irJobs.active, path); irJobs.Unlock() }()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)

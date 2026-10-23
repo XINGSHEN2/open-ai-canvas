@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
-import { App } from "antd";
+import { App, Button } from "antd";
+import { useModelCatalogLoad } from "@/lib/model-catalog-load";
+import { refreshSystemChannels } from "@/lib/user-session";
 
 import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 import { navigateToSettings } from "@/lib/settings-navigation";
@@ -13,7 +15,16 @@ import { appQueryClient } from "@/lib/query-client";
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const config = useConfigStore((state) => state.config);
     const userId = useUserStore((state) => state.user?.id || "");
-    const { message } = App.useApp();
+    const { message, notification } = App.useApp();
+    const catalogState = useModelCatalogLoad();
+    useEffect(() => {
+        const key = "model-catalog-load-error";
+        if (catalogState.userId === userId && catalogState.status === "error") {
+            notification.error({ key, title: "模型列表加载失败", description: "已自动重试，暂时无法取得最新模型。已有配置未清空，请检查网络后重试。", duration: 0,
+                actions: <Button onClick={() => void refreshSystemChannels().catch(() => {})}>重新加载模型</Button> });
+        } else notification.destroy(key);
+        return () => notification.destroy(key);
+    }, [catalogState, userId, notification]);
     const handledConfigParams = useRef(false);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const setRuntimeStatuses = usePluginStore((state) => state.setRuntimeStatuses);

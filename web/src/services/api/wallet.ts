@@ -147,6 +147,7 @@ export type LinuxDOSetting = {
 };
 
 export type RegistrationSetting = {
+    passwordOnly?: boolean;
     enabled: boolean;
     agreementTitle?: string;
     agreementContent?: string;
@@ -276,7 +277,7 @@ export function getAdminRegistrationSetting() {
     return http.get<{ setting: RegistrationSetting }>("/admin/settings/registration");
 }
 
-export function updateAdminRegistrationSetting(input: { enabled: boolean; agreementTitle?: string; agreementContent?: string } | boolean) {
+export function updateAdminRegistrationSetting(input: { enabled: boolean; passwordOnly?: boolean; agreementTitle?: string; agreementContent?: string } | boolean) {
     const payload = typeof input === "boolean" ? { enabled: input } : input;
     return http.patch<{ setting: RegistrationSetting }>("/admin/settings/registration", payload);
 }

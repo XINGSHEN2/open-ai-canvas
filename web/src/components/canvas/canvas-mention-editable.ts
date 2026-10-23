@@ -12,6 +12,8 @@ export function splitMentionText(value: string, references: CanvasResourceRefere
     references.forEach((reference) => {
         const serializedToken = canvasResourceMentionToken(reference);
         referenceByToken.set(serializedToken, { reference, serializedToken });
+        // IR bindings are exact resource tokens, never aliases for ordinary @图片N.
+        if (serializedToken.startsWith("@[ir:")) return;
         referenceByToken.set(`@${reference.label}`, { reference, serializedToken });
         if (reference.nodeId && !reference.assetId) referenceByToken.set(`@[node:${reference.nodeId}]`, { reference, serializedToken });
     });
@@ -19,7 +21,7 @@ export function splitMentionText(value: string, references: CanvasResourceRefere
     const parts: MentionTextPart[] = [];
     let index = 0;
     while (index < value.length) {
-        const token = tokens.find((item) => value.startsWith(item, index) && hasMentionBoundary(value, index + item.length));
+        const token = tokens.find((item) => value.startsWith(item, index) && (item.startsWith("@[ir:") || hasMentionBoundary(value, index + item.length)));
         if (!token) {
             const nextTokenIndex = findNextMentionIndex(value, tokens, index + 1);
             const end = nextTokenIndex < 0 ? value.length : nextTokenIndex;
@@ -44,7 +46,7 @@ export function findNextMentionIndex(value: string, tokens: string[], fromIndex:
     let next = -1;
     tokens.forEach((token) => {
         const index = value.indexOf(token, fromIndex);
-        if (index >= 0 && hasMentionBoundary(value, index + token.length) && (next < 0 || index < next)) next = index;
+        if (index >= 0 && (token.startsWith("@[ir:") || hasMentionBoundary(value, index + token.length)) && (next < 0 || index < next)) next = index;
     });
     return next;
 }

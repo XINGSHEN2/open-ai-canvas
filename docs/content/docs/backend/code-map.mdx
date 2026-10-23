@@ -5,6 +5,11 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 本地 Qwen 与视频 IR 引用
+
+- Qwen 图片协议入口：`backend/internal/app/provider_image.go`；本地异步提交、持久任务 ID、原任务轮询和网络恢复：`provider_qwen_image.go`。`task_worker.go` 管理有限回查，`task_media_recovery.go` 负责下载检查点；回归位于 `provider_qwen_image_test.go`。
+- IR 侧栏：`web/src/components/ir-prompt-button.tsx`；数字标签与稳定资源绑定：`web/src/lib/ir-reference-bindings.ts`；IR 入参：`ir-references.ts`；最终生成参数出口：`web/src/services/api/generation-task.ts`。创作页与短剧的素材映射分别位于 `creation-references.ts` 和 `workflow-shot-references.ts`。
+
 ## 画布实时会话
 
 - 传输入口：`backend/internal/handler/canvas_realtime.go` 校验登录与 Origin、管理 WebSocket；`app/canvas_realtime.go` 校验画布归属，`internal/canvas/realtime.go` 负责临时 Presence、房间隔离与 Redis 分发，`realtime_devices.go` 管理跨实例统一窗口编号及临时租期。

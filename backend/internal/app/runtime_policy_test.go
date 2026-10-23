@@ -128,6 +128,27 @@ func TestResumableImageProviderDeadlineOnlyForAsyncProtocols(t *testing.T) {
 	}
 }
 
+func TestMiniMaxDeadlineResumesOnlyPersistedTask(t *testing.T) {
+	svc := &Service{}
+	input, err := json.Marshal(canvasGenerationInput{Mode: "video", Config: providerConfig{BaseURL: "https://93.184.216.34", InterfaceType: string(model.ChannelInterfaceMiniMaxVideo)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := model.Task{ID: "h3", Type: "canvas_video", ProviderRequestID: "h3-upstream"}
+	if !svc.shouldDeferProviderTask(task, string(input), context.DeadlineExceeded) {
+		t.Fatal("H3 timeout must resume polling")
+	}
+	for _, failure := range []error{context.Canceled, providerHTTPError{StatusCode: 404}} {
+		if svc.shouldDeferProviderTask(task, string(input), failure) {
+			t.Fatal("terminal errors/cancellation must not resume")
+		}
+	}
+	task.ProviderRequestID = ""
+	if svc.shouldDeferProviderTask(task, string(input), context.DeadlineExceeded) {
+		t.Fatal("unknown submission must not be retried")
+	}
+}
+
 func TestResumableVideoDeadlineUsesResolvedSystemChannelProtocol(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+kernel.NewID()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
