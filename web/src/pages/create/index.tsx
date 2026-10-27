@@ -14,6 +14,7 @@ import { continueCreationConversationOnCanvas } from "@/services/creation-canvas
 import { useExternalAssetSources } from "@/hooks/use-external-asset-sources";
 import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue, videoDurationAllowed, videoDurationOptions } from "@/lib/model-capabilities";
 import { inferVideoOperation, modelGroupReferenceLimits, resolveCompatibleModel, mergedImageCapabilityConfig, type ModelRequirements } from "@/lib/model-selection";
+import { creationVideoInputState } from "./creation-video-input";
 import type { BackendGenerationResult } from "@/services/api/generation-task";
 import type { Skill } from "@/services/api/skills";
 import type { GenerationTask } from "@/services/api/task-center";
@@ -252,9 +253,9 @@ export default function CreatePage() {
     }, [composerPreferencesHydrated, composerPreferencesInitialized, mode, selectedModel, videoProfile]);
 
     useEffect(() => {
-        const reconciled = mode === "video" && videoReferenceLimits
-            ? reconcileCreationAttachmentLimits(attachments, mentionReferences, videoReferenceLimits)
-            : reconcileCreationAttachmentLimit(attachments, mentionReferences, maxReferences);
+        // 视频模型切换保留素材与 @ 引用，由用户根据提示调整，不静默删除。
+        if (mode === "video") return;
+        const reconciled = reconcileCreationAttachmentLimit(attachments, mentionReferences, maxReferences);
         if (reconciled.attachments === attachments) return;
         setAttachments(reconciled.attachments);
         if (reconciled.removedReferences.length) setPrompt((current) => removeCreationReferenceTokens(current, reconciled.removedReferences));
@@ -592,6 +593,13 @@ export default function CreatePage() {
         }
         if (!selectedModel) {
             toast.warning(`请先在设置中配置${modeLabels[mode]}模型`);
+            releaseRetryLock();
+            releaseSubmitGate();
+            return;
+        }
+        const videoInputError = mode === "video" ? creationVideoInputState(config, selectedModel, modelRequirements).error : "";
+        if (videoInputError) {
+            toast.warning(videoInputError);
             releaseRetryLock();
             releaseSubmitGate();
             return;

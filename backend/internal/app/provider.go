@@ -239,7 +239,11 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 	}
 	if resumedProviderRequestID(ctx) == "" {
 		mediaPolicy := providerMediaHydrationPolicyFor(ctx, input)
-		if err := s.hydrateGenerationMedia(userID, &input, mediaPolicy); err != nil {
+		if input.Config.InterfaceType == giteeH3Protocol {
+			if err := s.prepareGiteeMedia(ctx, userID, &input); err != nil {
+				return nil, err
+			}
+		} else if err := s.hydrateGenerationMedia(userID, &input, mediaPolicy); err != nil {
 			return nil, err
 		}
 		if err := s.prepareArkPrivateAssetReferences(ctx, userID, &input); err != nil {

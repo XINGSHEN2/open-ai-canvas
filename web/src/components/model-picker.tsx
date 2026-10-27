@@ -33,6 +33,7 @@ type ModelPickerProps = {
     requirements?: ModelRequirements;
     showConfiguredModelName?: boolean;
     modelFilter?: (model: string) => boolean;
+    allowIncompleteInput?: boolean;
 };
 
 export function ModelPicker({
@@ -51,6 +52,7 @@ export function ModelPicker({
     requirements,
     showConfiguredModelName = false,
     modelFilter,
+    allowIncompleteInput = false,
 }: ModelPickerProps) {
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const pickerId = useId();
@@ -66,7 +68,7 @@ export function ModelPicker({
     const optionGroups = useMemo(() => groupModelsForPicker(config, options), [config, options]);
     const storedCurrent = value?.trim() || "";
     // 参数档位会在选中模型后由调用方归一到其能力配置，不能因为旧模型留下的参数而禁止切换。
-    const selectionRequirements = requirements ? { ...requirements, videoSeconds: undefined, imageSize: undefined, options: undefined } : undefined;
+    const selectionRequirements = allowIncompleteInput ? { capability } : requirements ? { ...requirements, videoSeconds: undefined, imageSize: undefined, options: undefined } : undefined;
     const resolvedCurrent = isDirectSystemModel(config, storedCurrent) ? storedCurrent : resolveCompatibleModel(config, storedCurrent, selectionRequirements) || storedCurrent;
     // 旧画布可能保存过已下架或前端历史内置模型；它们不能重新进入当前可选目录。
     const current = options.includes(resolvedCurrent) ? resolvedCurrent : "";

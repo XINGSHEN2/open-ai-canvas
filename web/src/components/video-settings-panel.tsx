@@ -49,6 +49,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-sm font-semibold">视频设置</div> : null}
+                {resolveModelRequestConfig(config, config.model).interfaceType === "gitee-h3-video" ? <p role="note" className="text-xs leading-5">{profile.defaultOperation === "text_to_video" ? "文生视频：只发送提示词，不上传素材。" : profile.defaultOperation === "image_to_video" ? "首尾帧生成：第 1 张为首帧，第 2 张为尾帧；画布明确指定的首尾帧优先。图片经 Litterbox 公网中转 12 小时，提交前需确认。" : "参考素材经 Litterbox 公网中转 12 小时，提交前需确认。"}请勿使用敏感内容。固定 20 步，分辨率由上游决定；云端调用会产生费用。</p> : null}
                 {configuredResolutions.length ? <SettingGroup title="分辨率" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-1.5">
                         {configuredResolutions.map((item) => (

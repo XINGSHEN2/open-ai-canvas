@@ -95,19 +95,19 @@ export function IRPromptButton({ persistenceKey, prompt, fingerprint, disabled, 
         } finally { if (!abort.signal.aborted) { lock.current = false; setBusy(false); } }
     }
     return <>
-        <Button size="small" disabled={disabled} onClick={() => setOpen(true)} title="打开 IR 优化面板，不会自动发送请求">{busy ? "IR 优化 · 处理中" : "IR 优化"}</Button>
+        <Button size="small" disabled={disabled} onClick={() => setOpen(true)} title="打开提示词优化面板，不会自动发送请求">{busy ? "提示词优化 · 处理中" : "提示词优化"}</Button>
         {restore && prompt === restore.applied ? <Button size="small" type="text" disabled={disabled || busy} onClick={() => { onApply(restore.original); setRestore(null); }}>恢复优化前</Button> : null}
-        <AppDrawer title="IR 优化" open={open} onClose={() => setOpen(false)} size={640}>
+        <AppDrawer title="提示词优化" open={open} onClose={() => setOpen(false)} size={640}>
             <div data-canvas-no-zoom data-canvas-wheel-scroll className="flex flex-col gap-4">
                 <details open={!hasRequested}><summary>{hasRequested ? "本次请求的原始需求" : "当前视频需求"}</summary><Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>{displayIRPrompt(hasRequested ? original : prompt, input?.assets) || "请先在视频提示词输入框中填写需求。"}</Typography.Paragraph></details>
                 <Typography.Text type="secondary">发送时使用当前视频提示词、参考素材和生成设置。打开此面板不会发送请求。</Typography.Text>
-                <Button type={draft ? "default" : "primary"} loading={busy} disabled={!ready || busy || pending || disabled || !prompt.trim()} onClick={() => void start()}>{hasRequested ? "重新发送 IR 优化请求" : "发送 IR 优化请求"}</Button>
+                <Button type={draft ? "default" : "primary"} loading={busy} disabled={!ready || busy || pending || disabled || !prompt.trim()} onClick={() => void start()}>{hasRequested ? "重新优化提示词" : "开始优化提示词"}</Button>
                 {pending && !busy ? <Button onClick={() => { if (!saved || lock.current) return; lock.current = true; setError(""); const abort = new AbortController(); controller.current = abort; void watch(saved, abort); }}>继续查询原任务（不重复生成）</Button> : null}
                 {busy ? <Alert type="info" showIcon title="正在分析素材并编写提示词…" description="关闭面板、切换镜头或刷新后，可回到同一入口继续查询。请勿重复提交。" /> : null}
                 {error ? <Alert type="error" showIcon title={error} description="原提示词未修改，你仍可使用原提示词生成视频。" /> : null}
                 {stale ? <Alert type="warning" showIcon title="提示词、素材或设置已经变化" description="此结果基于优化前的输入，请重新优化以避免引用错位。" /> : null}
                 <label htmlFor="ir-prompt-draft">优化后的提示词（可编辑）</label>
-                <Input.TextArea id="ir-prompt-draft" value={draft} onChange={(event) => { if (!saved) return; const next = { ...saved, draft: event.target.value }; setSaved(next); void storage.write(next).catch(() => setError("IR 编辑内容未能保存到浏览器，请复制备份后重试")); }} disabled={busy || pending || !hasRequested} placeholder="发送 IR 优化请求后，返回的提示词会显示在这里，你可以继续编辑。" autoSize={{ minRows: 16, maxRows: 28 }} />
+                <Input.TextArea id="ir-prompt-draft" value={draft} onChange={(event) => { if (!saved) return; const next = { ...saved, draft: event.target.value }; setSaved(next); void storage.write(next).catch(() => setError("优化后的编辑内容未能保存到浏览器，请复制备份后重试")); }} disabled={busy || pending || !hasRequested} placeholder="开始优化后，返回的提示词会显示在这里，你可以继续编辑。" autoSize={{ minRows: 16, maxRows: 28 }} />
                 {input ? <Typography.Text type="secondary">参考素材：{input.assets.map((asset) => asset.label).join("、") || "无"}；{input.seconds} 秒 · {input.ratio} · {input.resolution}P</Typography.Text> : null}
                 <Typography.Text type="secondary">本次优化不会改变素材和生成设置。应用后素材引用会绑定到原文件；删除或替换素材后请重新优化。请手动点击生成视频。</Typography.Text>
                 <Space><Button onClick={() => setOpen(false)}>关闭</Button><Button type="primary" disabled={busy || disabled || stale || !draft.trim()} onClick={() => {

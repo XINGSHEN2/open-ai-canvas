@@ -1,0 +1,13 @@
+{
+ "modelKey":"minimax-h3-gitee", "providerModelKey":"MiniMax-H3", "displayName":"MiniMax-H3（Gitee · 公网中转）",
+ "description":"付费云端生成；参考素材经 Litterbox 公开临时托管 12 小时，提交前需同意。固定 20 步，分辨率由上游决定。",
+ "capability":"video", "protocol":"gitee-h3-video", "billingMode":"fixed_request",
+ "priceConfigured":true, "unitPriceMicrocredits":0, "enabled":true,
+ "capabilityConfig":{"version":1,"video":{
+  "references":{"promptMaxChars":7000,"minImages":0,"maxImages":9,"maxImageBytes":33554432,"maxVideos":3,"maxVideoBytes":104857600,"maxVideoDurationSeconds":15,"maxAudios":3,"maxAudioBytes":33554432,"maxAudioDurationSeconds":15},
+  "duration":{"selection":"range","min":6,"max":6,"step":1,"default":6},
+  "ratios":["16:9"],"defaultRatio":"16:9","resolutions":[],"defaultResolution":"",
+  "generateAudio":{"supported":false,"default":false},"watermark":{"supported":false,"default":false},
+  "operations":["reference_to_video"],"defaultOperation":"reference_to_video"
+ }}
+}

@@ -1,4 +1,6 @@
 import { normalizeAudioFormatForConfig, normalizeAudioVoiceForConfig } from "@/lib/audio-generation";
+import { requestGiteeMediaConsent } from "@/services/gitee-media-consent";
+import { bindGiteeFrames } from "@/lib/gitee-video-modes";
 import { imageParameterRequest } from "@/lib/image-parameters";
 import { getMediaBlob } from "@/services/file-storage";
 import { getImageBlob } from "@/services/image-storage";
@@ -67,6 +69,7 @@ const defaultDependencies: GenerationTaskDependencies = {
 };
 
 type PreparedGenerationReferences = {
+    litterboxUploadConsent?: boolean;
     referenceImages: Awaited<ReturnType<typeof prepareBackendImageReference>>[];
     referenceVideos: Awaited<ReturnType<typeof prepareBackendMediaReference>>[];
     referenceAudios: Awaited<ReturnType<typeof prepareBackendMediaReference>>[];
@@ -245,13 +248,15 @@ async function prepareGenerationReferences({
     referenceAudios = [],
     mask,
 }: Pick<BackendGenerationTaskOptions, "config" | "mode" | "referenceImages" | "referenceVideos" | "referenceAudios" | "mask">): Promise<PreparedGenerationReferences> {
+    const litterboxUploadConsent = mode === "video" && referenceImages.length + referenceVideos.length + referenceAudios.length > 0 && resolveModelRequestConfig(config, config.model).interfaceType === "gitee-h3-video"
+        ? await requestGiteeMediaConsent() : undefined;
     // asset:// 仅视频生成可用；Agent Plan Seedream 与 Seedance 共用 /api/plan/v3，不能按 BaseURL 误判。
     const preferArkAssetUrl = mode === "video" && usesArkVideoAssetReference(config);
     const preparedImages = await Promise.all(referenceImages.map((image) => prepareBackendImageReference(image, preferArkAssetUrl)));
     const preparedVideos = await Promise.all(referenceVideos.map(prepareBackendMediaReference));
     const preparedAudios = await Promise.all(referenceAudios.map(prepareBackendMediaReference));
     const preparedMask = mask ? await prepareBackendImageReference(mask, false) : undefined;
-    return { referenceImages: preparedImages, referenceVideos: preparedVideos, referenceAudios: preparedAudios, mask: preparedMask };
+    return { referenceImages: preparedImages, referenceVideos: preparedVideos, referenceAudios: preparedAudios, mask: preparedMask, litterboxUploadConsent };
 }
 
 // 与后端 isArkPrivateAssetVideoConfig 对齐：方舟视频渠道允许参考图直接 asset:// 引用，
@@ -296,6 +301,8 @@ function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepa
         ...prepared.referenceAudios.map((item) => ({ kind: "audio" as const, resourceId: resourceIdFromStorageKey(item.storageKey) || "" })),
     ]) : options.prompt;
     const videoOperation = generationOperation(options);
+    const gitee = mode === "video" && resolveModelRequestConfig(config, config.model).interfaceType === "gitee-h3-video";
+    const referenceImages = gitee && videoOperation === "image_to_video" ? bindGiteeFrames(prepared.referenceImages, metadata) : prepared.referenceImages;
     const workflow = resolveGenerationWorkflowExecution(config, mode);
     const logicalModelId = workflow ? "" : logicalModelIDForConfig(config);
     return {
@@ -314,12 +321,14 @@ function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepa
             capabilityOptions: logicalModelId ? logicalCapabilityOptions(config, mode) : undefined,
             textHistory: options.textHistory?.map((entry) => ({ ...entry, content: irPromptForTextHistory(entry.content) })),
             ...(mode === "text" ? { textOptions: { stream: options.streamText !== false, thinking: options.enableThinking === true } } : {}),
-            referenceImages: prepared.referenceImages,
+            referenceImages,
             referenceVideos: prepared.referenceVideos,
             referenceAudios: prepared.referenceAudios,
             mask: prepared.mask,
             metadata: generationMetadata(config, {
                 ...metadata,
+                ...(gitee ? { videoEditOperation: videoOperation } : {}),
+                ...(prepared.litterboxUploadConsent ? { litterboxUploadConsent: true } : {}),
                 ...(options.clientOperationId ? { clientOperationId: options.clientOperationId } : {}),
                 ...(options.retryOf ? { retryOf: options.retryOf } : {}),
                 ...(options.attemptGroupId ? { attemptGroupId: options.attemptGroupId } : {}),

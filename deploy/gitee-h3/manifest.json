@@ -1,0 +1,57 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "gitee-h3-video",
+  "name": "MiniMax-H3（Gitee）",
+  "version": "1.1.0",
+  "author": "Local integration",
+  "description": "Gitee/Moark T2VA、FL2VA 与 Ref2VA；素材经 Litterbox 公网中转 12 小时。",
+  "permissions": ["generation.run", "media.read"],
+  "configuration": {"fields": [{"name": "apiKey", "type": "secret", "label": "API Key", "required": true}]},
+  "contributes": {"providers": [{
+    "id": "gitee-h3-video", "label": "MiniMax-H3（Gitee）",
+    "capabilities": ["video"], "scopes": ["admin.system-channel", "canvas", "creation"],
+    "baseUrl": "https://ai.gitee.com", "requiresPublicMediaUrls": true,
+    "auth": {"type": "bearer", "field": "apiKey"},
+    "parameters": [
+      {"name":"model","type":"string","required":true,"mapping":"model"},
+      {"name":"prompt","type":"string","required":true,"mapping":"prompt"},
+      {"name":"duration","type":"integer","values":["6"],"mapping":"duration_seconds"},
+      {"name":"aspectRatio","type":"string","values":["16:9"],"mapping":"aspect_ratio"},
+      {"name":"images","type":"media[]","mapping":"cond_image"},
+      {"name":"videos","type":"media[]","mapping":"cond_video"},
+      {"name":"audios","type":"media[]","mapping":"cond_audio"}
+    ],
+    "validations": [
+      {"assert":{"$in":[{"$ref":"request.operation"},["text_to_video","image_to_video","reference_to_video"]]},"message":"请选择文生视频、首尾帧或参考生视频模式"},
+      {"assert":{"$or":[{"$ne":[{"$ref":"request.operation"},"text_to_video"]},{"$and":[{"$eq":[{"$len":{"$ref":"request.images"}},0]},{"$eq":[{"$len":{"$ref":"request.videos"}},0]},{"$eq":[{"$len":{"$ref":"request.audios"}},0]}]}]},"message":"文生视频不能携带参考素材"},
+      {"assert":{"$or":[{"$ne":[{"$ref":"request.operation"},"image_to_video"]},{"$and":[{"$eq":[{"$len":{"$ref":"request.images"}},2]},{"$eq":[{"$len":{"$ref":"request.videos"}},0]},{"$eq":[{"$len":{"$ref":"request.audios"}},0]},{"$eq":[{"$len":{"$filter":{"from":{"$ref":"request.images"},"as":"m","where":{"$eq":[{"$ref":"m.role"},"first_frame"]}}}},1]},{"$eq":[{"$len":{"$filter":{"from":{"$ref":"request.images"},"as":"m","where":{"$eq":[{"$ref":"m.role"},"last_frame"]}}}},1]}]}]},"message":"首尾帧模式必须恰好包含一张首帧和一张尾帧，不能混入视频或音频"},
+      {"assert":{"$or":[{"$ne":[{"$ref":"request.operation"},"reference_to_video"]},{"$and":[{"$gt":[{"$len":{"$concatArrays":[{"$ref":"request.images"},{"$ref":"request.videos"},{"$ref":"request.audios"}]}},0]},{"$eq":[{"$len":{"$filter":{"from":{"$ref":"request.images"},"as":"m","where":{"$in":[{"$ref":"m.role"},["first_frame","last_frame"]]}}}},0]}]}]},"message":"参考生成至少需要一份素材，不能标记首尾帧"},
+      {"assert":{"$eq":[{"$ref":"request.model"},"MiniMax-H3"]},"message":"仅支持 MiniMax-H3"},
+      {"assert":{"$eq":[{"$ref":"request.duration"},6]},"message":"当前 Gitee 验证配置仅开放 6 秒"},
+      {"assert":{"$eq":[{"$ref":"request.aspectRatio"},"16:9"]},"message":"当前 Gitee 验证配置仅开放 16:9"},
+      {"assert":{"$lte":[{"$len":{"$ref":"request.images"}},9]},"message":"最多 9 张参考图"},
+      {"assert":{"$lte":[{"$len":{"$ref":"request.videos"}},3]},"message":"最多 3 个参考视频"},
+      {"assert":{"$lte":[{"$len":{"$ref":"request.audios"}},3]},"message":"最多 3 个参考音频"}
+    ],
+    "create": {"method":"POST","path":"/v1/async/videos/generations","contentType":"application/json",
+      "headers":{"X-Failover-Enabled":"true"},
+      "body": {
+        "model":{"$ref":"request.model"}, "prompt":{"$ref":"request.prompt"},
+        "duration_seconds":{"$ref":"request.duration"}, "aspect_ratio":{"$ref":"request.aspectRatio"},
+        "task":{"$if":{"condition":{"$eq":[{"$ref":"request.operation"},"text_to_video"]},"then":"t2va","else":{"$if":{"condition":{"$eq":[{"$ref":"request.operation"},"image_to_video"]},"then":"fl2va","else":"ref2va"}}}}, "num_steps":20, "seed":0,
+        "first_frame":{"$if":{"condition":{"$eq":[{"$ref":"request.operation"},"image_to_video"]},"then":{"$first":{"$map":{"from":{"$filter":{"from":{"$ref":"request.images"},"as":"m","where":{"$eq":[{"$ref":"m.role"},"first_frame"]}}},"as":"m","in":{"$ref":"m.value"}}}},"else":null}},
+        "last_frame":{"$if":{"condition":{"$eq":[{"$ref":"request.operation"},"image_to_video"]},"then":{"$first":{"$map":{"from":{"$filter":{"from":{"$ref":"request.images"},"as":"m","where":{"$eq":[{"$ref":"m.role"},"last_frame"]}}},"as":"m","in":{"$ref":"m.value"}}}},"else":null}},
+        "cond_image":{"$if":{"condition":{"$eq":[{"$ref":"request.operation"},"reference_to_video"]},"then":{"$omitEmpty":{"$map":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","in":{"$ref":"media.value"}}}},"else":null}},
+        "cond_video":{"$if":{"condition":{"$eq":[{"$ref":"request.operation"},"reference_to_video"]},"then":{"$omitEmpty":{"$map":{"from":{"$sortByOrder":{"$ref":"request.videos"}},"as":"media","in":{"$ref":"media.value"}}}},"else":null}},
+        "cond_audio":{"$if":{"condition":{"$eq":[{"$ref":"request.operation"},"reference_to_video"]},"then":{"$omitEmpty":{"$map":{"from":{"$sortByOrder":{"$ref":"request.audios"}},"as":"media","in":{"$ref":"media.value"}}}},"else":null}}
+      }},
+    "poll":{"method":"GET","path":"/api/v1/task/{{taskId}}","headers":{"X-Failover-Enabled":"true"}},
+    "response": {
+      "taskId":{"$coalesce":[{"$ref":"response.task_id"},{"$ref":"taskId"}]},
+      "status":{"$ref":"response.status"},
+      "message":{"$coalesce":[{"$ref":"response.message"},{"$ref":"response.error.message"},{"$ref":"response.error"}]},
+      "videos":{"$ref":"response.output.file_url"},
+      "errorPaths":["error"], "resultEphemeral":true
+    }
+  }]}
+}

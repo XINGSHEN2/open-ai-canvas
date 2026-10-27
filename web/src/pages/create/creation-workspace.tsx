@@ -1,4 +1,5 @@
 import { ImageSizePicker } from "@/components/image-size-picker";
+import { creationVideoInputState } from "./creation-video-input";
 import { IRPromptButton } from "@/components/ir-prompt-button";
 import { prepareIRReferences } from "@/lib/ir-references";
 import { ImageParameterFields } from "@/components/image-parameter-fields";
@@ -151,7 +152,8 @@ export function CreationComposer(props: ComposerProps) {
     const interactionBusy = props.busy || props.referenceReplacementBusy;
     const referenceOnlyVideo = props.mode === "video" && props.videoProfile.operations.length === 1 && props.videoProfile.operations[0] === "reference_to_video";
     const hasReferenceMedia = props.attachments.some((item) => creationAttachmentKind(item) !== "file") || props.references.some((item) => item.active && ["image", "video", "audio"].includes(item.kind));
-    const canSubmit = Boolean(props.prompt.trim()) && !interactionBusy && (!referenceOnlyVideo || hasReferenceMedia);
+    const videoInputState = props.mode === "video" ? creationVideoInputState(props.config, props.model, props.modelRequirements) : undefined;
+    const canSubmit = Boolean(props.prompt.trim()) && !interactionBusy && !videoInputState?.error && (!referenceOnlyVideo || hasReferenceMedia);
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const priceChannel = resolveModelChannel(props.config, props.model);
     const quoteRequest = useMemo(() => modelQuoteRequest(props.config, props.model, props.mode, props.modelRequirements), [props.config, props.mode, props.model, props.modelRequirements]);
@@ -374,6 +376,10 @@ export function CreationComposer(props: ComposerProps) {
                 </div> : null}
             </div>
         </div>
+        {videoInputState ? <div role="status" className="creation-video-input-guidance" style={{ color: "var(--creation-text)", padding: "0 20px 12px", fontSize: 13 }}>
+            {videoInputState.hint}
+            {videoInputState.error ? <div>{videoInputState.error}</div> : null}
+        </div> : null}
         <footer className="creation-chat-dock creation-chat-dock-single-row">
             <div className="creation-chat-controls">
                 {props.variant === "thread" ? <ModePicker mode={props.mode} onModeChange={props.onModeChange} /> : null}
@@ -396,7 +402,7 @@ export function CreationComposer(props: ComposerProps) {
                         <span>优化</span>
                     </button>
                 </Tooltip> : null}
-				<ModelPicker config={props.config} value={props.model} onChange={props.onModelChange} capability={props.mode} requirements={props.modelRequirements} className="creation-model-picker" placeholder={`选择${modeLabels[props.mode]}模型`} showSelectedPrice={false} showOptionPrices variant="creation" />
+				<ModelPicker config={props.config} value={props.model} onChange={props.onModelChange} capability={props.mode} requirements={props.modelRequirements} allowIncompleteInput={props.mode === "video"} className="creation-model-picker" placeholder={`选择${modeLabels[props.mode]}模型`} showSelectedPrice={false} showOptionPrices variant="creation" />
                 {props.mode === "video" || (props.mode === "image" && imageSettingsSupported) ? <GenerationSettingsMenu {...props} /> : null}
                 {props.mode === "video" ? <DurationMenu profile={props.videoProfile} seconds={props.seconds} onChange={props.setSeconds} /> : null}
                 {props.mode === "text" ? <>
@@ -423,7 +429,7 @@ export function CreationComposer(props: ComposerProps) {
                 } as CSSProperties}
                 onClick={interactionBusy ? undefined : props.onSubmit}
                 aria-label={actionLabel}
-                title={!canSubmit && !interactionBusy ? "输入创作想法后即可生成" : actionLabel}
+                title={!canSubmit && !interactionBusy ? videoInputState?.error || "输入创作想法后即可生成" : actionLabel}
             >
                 {showWorkingGlow ? <WorkingGlow active color="var(--creation-text)" radius="999px" /> : null}
                 {showCost ? <span className="creation-submit-cost" title={routeQuote ? modelQuoteDescription(routeQuote) : undefined}><CreditSymbol /><span>{routeQuote?.estimated ? `预估:${formattedCredits}` : formattedCredits}</span></span> : null}
